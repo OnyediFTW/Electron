@@ -19,7 +19,6 @@ WEIGHTS = {
     "workload": 0.0,    # TODO(C): fewer open jobs is better
 }
 MAX_MILES = 25.0
-PRINCETON = (40.3573, -74.6672)  # FALLBACK when the customer location is unknown
 
 
 def miles(a: tuple[float, float], b: tuple[float, float]) -> float:
@@ -29,17 +28,20 @@ def miles(a: tuple[float, float], b: tuple[float, float]) -> float:
 
 
 def rank_techs(job: Job) -> list[RankedTech]:
-    here = (job.location.lat, job.location.lng) if job.location else PRINCETON
+    here = (job.location.lat, job.location.lng) if job.location else None
     ranked = []
     for t in list_techs():
         if job.trade and job.trade not in t.skills:
             continue
-        d = miles(here, (t.lat, t.lng))
-        score = (WEIGHTS["skill"]
-                 + WEIGHTS["distance"] * max(0.0, 1 - d / MAX_MILES)
-                 + WEIGHTS["rating"] * t.rating / 5)
+        score = WEIGHTS["skill"] + WEIGHTS["rating"] * t.rating / 5
+        if here:
+            d = miles(here, (t.lat, t.lng))
+            score += WEIGHTS["distance"] * max(0.0, 1 - d / MAX_MILES)
+            where = f"{d:.1f} mi away"
+        else:
+            where = "distance unknown"
         ranked.append(RankedTech(tech_id=t.id, score=round(score, 1),
-                                 reasons=[f"{job.trade} skill", f"{d:.1f} mi away", f"{t.rating} stars"]))
+                                 reasons=[f"{job.trade} skill", where, f"{t.rating} stars"]))
     ranked.sort(key=lambda r: r.score, reverse=True)
     log_event(job.id, "matching", f"ranked {len(ranked)} techs, top score {ranked[0].score if ranked else '-'}")
     return ranked

@@ -29,7 +29,7 @@ def _verify(body: bytes, headers) -> dict:
         return Webhook(secret).verify(body, dict(headers))
     except Exception as e:
         log_event(None, "error", f"webhook signature check failed: {e!r}")
-        raise HTTPException(401, "bad signature")
+        raise HTTPException(401, "bad signature") from None
 
 
 @router.post("/webhook/photon")

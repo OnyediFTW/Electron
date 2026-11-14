@@ -1,13 +1,14 @@
 """intake(photo_url, text) -> Job.   Owner: Person B.
 
-STUB: returns a hardcoded leaking-P-trap triage so A can wire the loop.
+STUB: the vision model isn't connected yet, so this does NOT guess. It keeps the
+customer's words and leaves issue, urgency and parts unknown (None / []).
 Replace with: vision LLM + strict JSON prompt, validated against Job.
 If the photo is unclear, set job.follow_up_question instead of guessing.
 """
 from typing import Optional
 
 from shared.db import log_event
-from shared.schema import Job, Part, Urgency
+from shared.schema import Job
 
 
 def intake(photo_url: Optional[str], text: str, *, customer_phone: str = "",
@@ -17,13 +18,10 @@ def intake(photo_url: Optional[str], text: str, *, customer_phone: str = "",
         customer_phone=customer_phone,
         photo_url=photo_url,
         raw_text=text,
-        trade="plumbing",
-        issue="leaking P-trap under kitchen sink",
-        urgency=Urgency.high,
-        parts=[
-            Part(name="1-1/2 in P-trap kit", confidence=0.7),
-            Part(name="1-1/2 in slip-joint washer", confidence=0.5),
-        ],
+        trade="plumbing",  # Electron only dispatches plumbers for now
+        issue=None,
+        urgency=None,
+        parts=[],
     )
-    log_event(job.id, "intake", f"STUB triage: {job.issue} ({job.urgency.value} urgency)")
+    log_event(job.id, "intake", "STUB: can't identify the problem yet (vision model not connected)")
     return job

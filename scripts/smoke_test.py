@@ -27,6 +27,9 @@ assert len(offers) == 2 and offers[0].response == "no", offers
 second = db.get_tech(offers[1].tech_id)
 dispatch.handle_inbound(second.phone, "yes!")
 job = db.get_job(job.id)
-assert job.status == JobStatus.booked and job.assigned_tech_id == second.id, job
+# No scheduling yet (free_slots stub returns []), so YES leaves the job accepted, not booked.
+assert job.status == JobStatus.accepted and job.assigned_tech_id == second.id, job
+assert len(db.list_messages()) >= 6, "every text in and out should be in messages"
 
-print(f"\nPASS: {first.name} declined, {second.name} booked. {len(db.list_events(job.id))} events logged.")
+print(f"\nPASS: {first.name} declined, {second.name} accepted. "
+      f"{len(db.list_events(job.id))} events, {len(db.list_messages())} messages logged.")

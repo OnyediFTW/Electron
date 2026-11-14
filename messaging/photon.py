@@ -69,6 +69,29 @@ def send(phone: str, text: str) -> None:
     r.raise_for_status()
 
 
+_lines: dict = {"at": 0.0, "map": {}}
+
+
+def line_numbers() -> dict[str, str]:
+    """{person's phone: the Photon number they text}, cached 5 minutes. {} on any error."""
+    import time
+    if not configured():
+        return {}
+    if time.time() - _lines["at"] < 300:
+        return _lines["map"]
+    try:
+        r = httpx.get(f"{API}/projects/{_cfg()[1]}/platforms/imessage/assignments",
+                      headers=_headers(), timeout=5)
+        r.raise_for_status()
+        body = r.json()
+        items = body.get("assignments") or body.get("data") or []
+        _lines["map"] = {a["handle"]: a.get("assignedPhoneNumber") for a in items if a.get("handle")}
+    except Exception:
+        pass
+    _lines["at"] = time.time()
+    return _lines["map"]
+
+
 def fetch_attachment(attachment_id: str) -> httpx.Response:
     r = httpx.get(f"{API}/projects/{_cfg()[1]}/attachments/{attachment_id}/content",
                   headers=_headers(), timeout=15, follow_redirects=True)

@@ -1,0 +1,221 @@
+<!doctype html>
+<!-- Owner: Person A. Live view of the three demo phones. Starts blank; polls /api/threads. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Electron Live Phones</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --board: #4B5259; --hole: #2C3035; --ink: #F3F4F1; --ink-2: #DADDE0;
+    --tape: #2449B8; --bezel: #121417; --screen: #FFFFFF; --text: #16181B; --muted: #646A72;
+    --out: #2563EB; --in: #ECEEF1;
+    --cu: linear-gradient(180deg, #F0B38C 0%, #CF7742 34%, #A0532B 72%, #6E3519 100%);
+    --cu-ring: linear-gradient(180deg, #F6C29F 0%, #D9834F 38%, #A85A30 74%, #74391B 100%);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background-color: var(--board);
+    background-image: radial-gradient(circle at center, var(--hole) 0 3px, transparent 3.6px);
+    background-size: 32px 32px; background-position: 16px 16px;
+    font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--ink); overflow: hidden;
+  }
+  #stage { position: absolute; left: 50%; top: 50%; width: 1600px; height: 1040px; transform-origin: center center; }
+  .abs { position: absolute; }
+
+  h1 { margin: 0; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 72px; line-height: 1; letter-spacing: .01em; text-transform: uppercase; white-space: nowrap; }
+  .sub { margin: 12px 0 0; font-size: 19px; line-height: 1.45; color: var(--ink-2); white-space: nowrap; }
+  .sub strong { color: var(--ink); font-weight: 600; }
+
+  .tape { background: var(--tape); color: #fff; font-family: 'IBM Plex Mono', monospace; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; border-radius: 2px; box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 2px 4px rgba(0,0,0,.35); text-shadow: 0 1px 0 rgba(0,0,0,.35); }
+  .tape.sm { font-size: 13px; padding: 6px 11px; }
+  .tape.lg { font-size: 15px; padding: 7px 14px; letter-spacing: .18em; }
+
+  .pipe { height: 24px; background: var(--cu); border-radius: 3px; transition: filter .5s ease, box-shadow .5s ease; }
+  .ring { width: 16px; height: 32px; background: var(--cu-ring); border-radius: 3px; }
+  .pipe.hot { filter: brightness(1.35) saturate(1.2); box-shadow: 0 0 18px 4px rgba(255,170,110,.55); }
+  #valveStem { transition: top .6s ease, height .6s ease; }
+  #valveWheel { transition: top .6s ease; }
+
+  .btn { appearance: none; border: 0; cursor: pointer; }
+  .btn:focus-visible { outline: 3px solid #FFD3B5; outline-offset: 3px; }
+  .btn:hover { filter: brightness(1.12); }
+
+  .phone { width: 300px; height: 640px; padding: 11px; background: var(--bezel); border-radius: 46px; box-shadow: 0 30px 50px rgba(0,0,0,.45), inset 0 0 0 2px #2B2F34; }
+  .screen { width: 100%; height: 100%; background: var(--screen); border-radius: 36px; overflow: hidden; display: flex; flex-direction: column; color: var(--text); }
+  .head { padding: 24px 16px 12px; border-bottom: 1px solid #ECEDEF; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .avatar { width: 40px; height: 40px; border-radius: 50%; background: #1E2328; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 16px; }
+  .name { font-size: 13px; font-weight: 600; }
+  .line { font-size: 11px; color: var(--muted); min-height: 14px; }
+  .thread { flex: 1; overflow-y: auto; padding: 14px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; line-height: 1.35; scroll-behavior: smooth; }
+  .empty { margin: auto; text-align: center; color: var(--muted); font-size: 12px; line-height: 1.5; padding: 0 18px; }
+  .stamp { align-self: center; font-size: 11px; color: var(--muted); margin: 4px 0; }
+  .b { max-width: 82%; padding: 8px 12px; white-space: pre-line; overflow-wrap: anywhere; animation: pop .25s ease-out; }
+  .b.mine { align-self: flex-end; background: var(--out); color: #fff; border-radius: 18px 18px 4px 18px; }
+  .b.theirs { align-self: flex-start; background: var(--in); border-radius: 18px 18px 18px 4px; }
+  .photo { align-self: flex-end; width: 176px; border-radius: 16px; display: block; animation: pop .25s ease-out; }
+  .compose { padding: 8px 12px 16px; }
+  .compose input { width: 100%; border: 1px solid #D5D8DD; border-radius: 18px; padding: 8px 14px; font: inherit; font-size: 12.5px; color: var(--text); background: #fff; }
+  @keyframes pop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .b, .photo { animation: none; } .pipe, #valveStem, #valveWheel { transition: none; } .thread { scroll-behavior: auto; } }
+
+  .foot { font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: var(--ink-2); }
+  .live { display: inline-flex; align-items: center; gap: 8px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #7BD88F; box-shadow: 0 0 0 3px rgba(123,216,143,.25); }
+  .dot.off { background: #E5A15A; box-shadow: 0 0 0 3px rgba(229,161,90,.25); }
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <div class="abs" style="left: 96px; top: 64px; width: 1000px">
+    <h1>Text a photo. Get a plumber.</h1>
+    <p class="sub">Live: text <strong id="custLine">the Electron number</strong> from Messages on your Mac or your phone, and watch each phone fill in.</p>
+  </div>
+  <button id="reset" class="btn tape lg abs" style="right: 96px; top: 76px">Start over</button>
+
+  <div id="pipeA" class="pipe abs" style="left: 440px; top: 430px; width: 230px" aria-hidden="true"></div>
+  <div class="ring abs" style="left: 516px; top: 426px" aria-hidden="true"></div>
+  <div class="ring abs" style="left: 596px; top: 426px" aria-hidden="true"></div>
+  <div id="pipeB" class="pipe abs" style="left: 440px; top: 720px; width: 230px" aria-hidden="true"></div>
+  <div class="ring abs" style="left: 556px; top: 716px" aria-hidden="true"></div>
+  <div id="pipeC" class="pipe abs" style="left: 930px; top: 430px; width: 230px" aria-hidden="true"></div>
+  <div class="abs" aria-hidden="true" style="left: 1027px; top: 420px; width: 40px; height: 44px; border-radius: 6px; background: linear-gradient(180deg, #E9CF7E 0%, #C9A64B 40%, #9C7B2C 78%, #6F5419 100%)"></div>
+  <div id="valveStem" class="abs" aria-hidden="true" style="left: 1043px; top: 398px; width: 8px; height: 24px; background: linear-gradient(90deg, #8E9399 0%, #D3D6DA 50%, #7D8287 100%)"></div>
+  <div id="valveWheel" class="abs" aria-hidden="true" style="left: 1021px; top: 376px; width: 52px; height: 18px; border: 6px solid #C2362B; border-radius: 50%; box-shadow: 0 2px 0 #7E1F18"></div>
+
+  <div class="tape sm abs" style="left: 470px; top: 384px; transform: rotate(-1.5deg)">Offer →</div>
+  <div class="tape sm abs" style="left: 486px; top: 758px; transform: rotate(1deg)">← Answer</div>
+  <div id="valveTape" class="tape sm abs" style="left: 952px; top: 476px; width: 190px; line-height: 1.4; letter-spacing: .14em; transform: rotate(-1deg)">Opens only on NO or 60 s of silence</div>
+
+  <div id="phones"></div>
+
+  <div class="foot abs" style="left: 96px; top: 960px; width: 1408px; display: flex; flex-wrap: wrap; gap: 8px 36px">
+    <span class="live"><span id="dot" class="dot"></span><span id="status">Connecting…</span></span>
+    <span>Problem, parts, price and time stay "unknown" until those agents are connected</span>
+  </div>
+</div>
+
+<template id="phoneTpl">
+  <div class="abs" data-slot>
+    <div style="position: absolute; left: 0; top: 0; width: 300px; display: flex; justify-content: center">
+      <div class="tape lg" data-label></div>
+    </div>
+    <div class="phone" style="position: absolute; left: 0; top: 56px">
+      <div class="screen">
+        <div class="head">
+          <div class="avatar" aria-hidden="true">E</div>
+          <div class="name">Electron</div>
+          <div class="line" data-line></div>
+        </div>
+        <div class="thread" data-thread aria-live="polite"></div>
+        <div class="compose"><input readonly aria-label="Message" data-compose></div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+const LEFT = { customer: 160, tech: 650, backup: 1140 };
+const TILT = { customer: -1, tech: 0.8, backup: -0.6 };
+const EMPTY = {
+  customer: "No messages yet. Send a text to start a job.",
+  tech: "No messages yet. Job offers land here first.",
+  backup: "No messages yet. Gets the offer only if the first tech passes.",
+};
+const stage = document.getElementById("stage");
+let since = null, slots = {}, seen = {};
+
+function fit() {
+  const s = Math.min(innerWidth / 1600, innerHeight / 1040);
+  stage.style.transform = `translate(-50%, -50%) scale(${s})`;
+}
+addEventListener("resize", fit); fit();
+
+const fmtLine = p => p ? p.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "+1 ($1) $2-$3") : "";
+const time = iso => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+const el = (tag, cls, text) => Object.assign(document.createElement(tag), { className: cls, textContent: text || "" });
+
+function slotFor(p) {
+  if (slots[p.role]) return slots[p.role];
+  const node = document.getElementById("phoneTpl").content.firstElementChild.cloneNode(true);
+  node.style.left = LEFT[p.role] + "px"; node.style.top = "214px";
+  node.querySelector("[data-label]").style.transform = `rotate(${TILT[p.role]}deg)`;
+  node.querySelector("[data-compose]").placeholder =
+    p.role === "customer" ? "Text from Messages on your Mac" : "Reply YES or NO from the phone";
+  document.getElementById("phones").appendChild(node);
+  return (slots[p.role] = node);
+}
+
+function flash(id) {
+  const pipe = document.getElementById(id);
+  pipe.classList.add("hot");
+  setTimeout(() => pipe.classList.remove("hot"), 1400);
+}
+
+function setValve(open) {
+  document.getElementById("valveStem").style.top = open ? "384px" : "398px";
+  document.getElementById("valveStem").style.height = open ? "38px" : "24px";
+  document.getElementById("valveWheel").style.top = open ? "362px" : "376px";
+  document.getElementById("valveTape").textContent = open ? "Open: passed to backup" : "Opens only on NO or 60 s of silence";
+}
+
+function render(data) {
+  for (const p of data.phones) {
+    if (!(p.role in LEFT)) continue;
+    const node = slotFor(p);
+    node.querySelector("[data-label]").textContent = p.label;
+    node.querySelector("[data-line]").textContent = fmtLine(p.line);
+    if (p.role === "customer" && p.line) document.getElementById("custLine").textContent = fmtLine(p.line);
+
+    const thread = node.querySelector("[data-thread]");
+    const msgs = p.messages, before = seen[p.role] || 0;
+    if (msgs.length === 0) {
+      thread.replaceChildren(el("div", "empty", EMPTY[p.role]));
+      seen[p.role] = 0;
+      if (p.role === "backup") setValve(false);
+      continue;
+    }
+    if (msgs.length === before) continue;
+    if (before === 0) thread.replaceChildren(el("div", "stamp", "Today " + time(msgs[0].created_at)));
+    for (const m of msgs.slice(before)) {
+      const mine = m.direction === "in";  // "in" = this person texted Electron
+      if (m.photo_url) thread.appendChild(Object.assign(document.createElement("img"), { className: "photo", src: m.photo_url, alt: "Photo sent by the customer" }));
+      if (m.text) thread.appendChild(el("div", "b " + (mine ? "mine" : "theirs"), m.text));
+      if (p.role === "backup") flash("pipeC");
+      else if (p.role === "customer" && !mine) flash("pipeB");
+      else flash("pipeA");
+    }
+    seen[p.role] = msgs.length;
+    thread.scrollTop = thread.scrollHeight;
+    if (p.role === "backup") setValve(true);
+  }
+}
+
+async function poll() {
+  try {
+    const r = await fetch("/api/threads" + (since ? "?since=" + encodeURIComponent(since) : ""), { cache: "no-store" });
+    const data = await r.json();
+    if (!since) since = data.server_time;
+    render(data);
+    document.getElementById("dot").className = "dot";
+    document.getElementById("status").textContent = "Live · updates every 1.5 s";
+  } catch (e) {
+    document.getElementById("dot").className = "dot off";
+    document.getElementById("status").textContent = "Can't reach the Electron server";
+  }
+}
+
+document.getElementById("reset").addEventListener("click", async () => {
+  since = null; seen = {};
+  setValve(false);
+  await poll();
+});
+
+poll(); setInterval(poll, 1500);
+</script>
+</body>
+</html>
