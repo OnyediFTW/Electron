@@ -54,7 +54,22 @@ def photo(attachment_id: str):
     if not attachment_id.startswith("pho_att_"):
         raise HTTPException(404)
     r = photon.fetch_attachment(attachment_id)
-    return Response(r.content, media_type=r.headers.get("content-type", "image/jpeg"))
+    data, ctype = r.content, r.headers.get("content-type", "image/jpeg").split(";")[0]
+    if ctype in ("image/heic", "image/heif"):  # iPhone photos; browsers can't show HEIC
+        try:
+            import io
+
+            from PIL import Image, ImageOps
+            from pillow_heif import register_heif_opener
+            register_heif_opener()
+            img = ImageOps.exif_transpose(Image.open(io.BytesIO(data))).convert("RGB")
+            img.thumbnail((1600, 1600))
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=85)
+            data, ctype = buf.getvalue(), "image/jpeg"
+        except Exception as e:
+            log_event(None, "error", f"HEIC to JPEG failed for {attachment_id}: {e!r}")
+    return Response(data, media_type=ctype, headers={"Cache-Control": "public, max-age=3600"})
 
 
 @router.post("/dev/inbound")
