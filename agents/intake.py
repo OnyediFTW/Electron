@@ -23,7 +23,9 @@ from pydantic import BaseModel, ValidationError
 from shared.db import log_event
 from shared.schema import Job, Part, Urgency
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+# Tried in order: if one is overloaded (503) or fails, the next one answers.
+GEMINI_MODELS = [m.strip() for m in os.getenv(
+    "GEMINI_MODELS", "gemini-3.5-flash-lite,gemini-3.6-flash").split(",") if m.strip()]
 MAX_EDGE_PX = 1568
 DEFAULT_FOLLOW_UP = "Can you send a closer photo of where the water is coming from?"
 PLUMBING_TRADES = {"plumbing", "drain", "water_heater", "gas", "sewer"}
@@ -40,9 +42,10 @@ supply, fixtures, traps, valves. Anything that is not plumbing (outlets, wiring,
 breakers) is electrical.
 - issue: one short line a technician would write, naming the fixture and the failure \
 (e.g. "leaking P-trap under kitchen sink").
-- urgency: high if water is actively leaking, there is no water, no hot water, sewage \
-backing up, or gas smell; medium for slow drains, running toilets, steady drips; low for \
-cosmetic or non-urgent issues.
+- urgency: high if water is leaking or dripping from a pipe, trap, valve or supply line \
+(under a sink counts), there is no water, no hot water, sewage backing up, or gas smell; \
+medium for slow drains, running toilets, a dripping faucet spout; low for cosmetic or \
+non-urgent issues.
 - parts: 0-4 parts the tech should likely bring, with real trade names and sizes \
 (kitchen P-trap is usually 1-1/2 in, bathroom sink P-trap 1-1/4 in, toilet flapper \
 2 in or 3 in, supply lines 3/8 in compression). confidence is honest: a size read from \
@@ -99,12 +102,12 @@ def _load_image(photo_url: Optional[str]) -> Optional[tuple[str, bytes]]:
 
 # ---------- LLM call ----------
 
-def _call_llm(image: Optional[tuple[str, bytes]], text: str) -> IntakeResult:
+def _call_llm(model: str, image: Optional[tuple[str, bytes]], text: str) -> IntakeResult:
     from google import genai
     from google.genai import types
 
     client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"),
-                          http_options=types.HttpOptions(timeout=20_000))  # ms
+                          http_options=types.HttpOptions(timeout=10_000))  # ms (Gemini rejects deadlines under 10 s)
     contents: list = []
     if image:
         mime_type, data = image
@@ -112,7 +115,7 @@ def _call_llm(image: Optional[tuple[str, bytes]], text: str) -> IntakeResult:
     contents.append(f"Customer text: {text or '(no text)'}" + ("" if image else "\n(No photo was attached.)"))
 
     resp = client.models.generate_content(
-        model=GEMINI_MODEL,
+        model=model,
         contents=contents,
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_PROMPT,
@@ -181,17 +184,18 @@ def intake(photo_url: Optional[str], text: str, *, customer_phone: str = "",
 
     result: Optional[IntakeResult] = None
     path = "vision" if image else "text-only"
+    used_model = None
     started = time.monotonic()
     if os.getenv("GEMINI_API_KEY"):
-        for attempt in (1, 2):  # retry once on a parse/validation failure
+        for model in GEMINI_MODELS:  # on any failure (overloaded, timeout, bad output) try the next model
             try:
-                result = _call_llm(image, text)
+                result = _call_llm(model, image, text)
+                used_model = model
                 break
             except (ValidationError, ValueError) as e:
-                log_event(log_id, "intake", f"LLM output invalid (attempt {attempt}): {e.__class__.__name__}")
+                log_event(log_id, "intake", f"{model} output invalid ({e.__class__.__name__}), trying next")
             except Exception as e:
-                log_event(log_id, "intake", f"LLM call failed: {e.__class__.__name__}: {str(e)[:120]}")
-                break
+                log_event(log_id, "intake", f"{model} failed: {e.__class__.__name__}: {str(e)[:100]}")
     latency = time.monotonic() - started
 
     if result is None:
@@ -217,7 +221,7 @@ def intake(photo_url: Optional[str], text: str, *, customer_phone: str = "",
         parts=[Part(name=p.name, confidence=min(1.0, max(0.0, p.confidence))) for p in result.parts],
         follow_up_question=follow_up,
     )
-    model_note = f"{GEMINI_MODEL}, {latency:.1f}s" if path in ("vision", "text-only") else "no LLM"
+    model_note = f"{used_model}, {latency:.1f}s" if path in ("vision", "text-only") else "no LLM"
     log_event(job.id, "intake",
               f"[{path}, {model_note}] {job.trade} / {job.urgency.value} urgency: {job.issue}; "
               f"{len(job.parts)} likely parts" + (f"; asking: {follow_up!r}" if follow_up else ""))
