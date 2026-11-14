@@ -6,6 +6,7 @@ Run: python -m scripts.smoke_test     (A runs this after every merge)
 import os
 
 os.environ["SUPABASE_URL"] = ""  # always run against the in-memory store
+os.environ["PHOTON_API_KEY"] = ""  # never send real iMessages from the smoke test
 os.environ.setdefault("OFFER_TIMEOUT_SECONDS", "600")
 
 from messaging import dispatch  # noqa: E402

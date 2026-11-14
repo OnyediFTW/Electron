@@ -47,6 +47,15 @@ create table if not exists events (
   created_at timestamptz not null default now()
 );
 
+-- Owned by A. Photon can only reply into a conversation the person started,
+-- so we save each phone's Photon space + line user from their inbound message.
+create table if not exists contacts (
+  id           text primary key,   -- phone, E.164
+  space_id     text not null,      -- pho_spc_...
+  line_user_id text not null,      -- pho_usr_... (receivedBy.id, used as senderId)
+  updated_at   timestamptz not null default now()
+);
+
 create index if not exists events_job_idx on events(job_id, created_at);
 create index if not exists offers_job_idx on offers(job_id);
 

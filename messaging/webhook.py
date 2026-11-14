@@ -1,10 +1,16 @@
 """HTTP entry points for inbound texts. Owner: Person A."""
-from fastapi import APIRouter, BackgroundTasks, Request
+import json
+import os
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 from pydantic import BaseModel
 
+from messaging import photon
 from messaging.dispatch import handle_inbound
+from shared.db import log_event
 
 router = APIRouter()
+_buffer = photon.MergeBuffer(handle_inbound)
 
 
 class InboundText(BaseModel):
@@ -13,18 +19,42 @@ class InboundText(BaseModel):
     photo_url: str | None = None
 
 
+def _verify(body: bytes, headers) -> dict:
+    """Standard Webhooks signature check when PHOTON_WEBHOOK_SECRET is set."""
+    secret = os.getenv("PHOTON_WEBHOOK_SECRET")
+    if not secret:
+        return json.loads(body)
+    from standardwebhooks.webhooks import Webhook
+    try:
+        return Webhook(secret).verify(body, dict(headers))
+    except Exception as e:
+        log_event(None, "error", f"webhook signature check failed: {e!r}")
+        raise HTTPException(401, "bad signature")
+
+
 @router.post("/webhook/photon")
-async def photon_webhook(req: Request, bg: BackgroundTasks):
-    payload = await req.json()
-    # TODO(A): map Photon's real payload shape. Guessing common field names for now.
-    attachments = payload.get("attachments") or []
-    msg = InboundText(
-        phone=payload.get("from") or payload.get("sender") or payload.get("phone", ""),
-        text=payload.get("text") or payload.get("body", ""),
-        photo_url=attachments[0] if attachments else payload.get("photo_url"),
-    )
-    bg.add_task(handle_inbound, msg.phone, msg.text, msg.photo_url)
+async def photon_webhook(req: Request):
+    event = _verify(await req.body(), req.headers)
+    msg = photon.parse_event(event)
+    if msg is None:
+        return {"ok": True, "ignored": event.get("type")}
+    if msg["space_id"] and msg["line_user_id"]:
+        photon.save_contact(msg["phone"], msg["space_id"], msg["line_user_id"])
+    photo_url = None
+    if msg["attachment_id"]:
+        base = os.getenv("PUBLIC_BASE_URL", str(req.base_url)).rstrip("/")
+        photo_url = f"{base}/photos/{msg['attachment_id']}"
+    _buffer.add(msg["phone"], msg["text"], photo_url)
     return {"ok": True}
+
+
+@router.get("/photos/{attachment_id}")
+def photo(attachment_id: str):
+    """Public proxy so B's vision model can read a Photon attachment by URL."""
+    if not attachment_id.startswith("pho_att_"):
+        raise HTTPException(404)
+    r = photon.fetch_attachment(attachment_id)
+    return Response(r.content, media_type=r.headers.get("content-type", "image/jpeg"))
 
 
 @router.post("/dev/inbound")

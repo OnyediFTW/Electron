@@ -19,7 +19,7 @@ from shared.schema import Job, Offer, Tech
 
 load_dotenv()
 
-TABLES = ("techs", "jobs", "offers", "events")
+TABLES = ("techs", "jobs", "offers", "events", "contacts")  # contacts: owned by A (Photon)
 
 
 def _now() -> str:
