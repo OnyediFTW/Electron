@@ -84,6 +84,7 @@ class Tech(BaseModel):
     lng: float
     rating: float
     calendar_id: Optional[str] = None
+    description: Optional[str] = None  # one line for the owner's view, e.g. "Plumber · water heaters"
 
 
 class RankedTech(BaseModel):

@@ -13,6 +13,7 @@ create table if not exists techs (
   rating      real not null default 4.5,
   calendar_id text
 );
+alter table techs add column if not exists description text;  -- one line for the owner's view
 
 create table if not exists jobs (
   id               uuid primary key default gen_random_uuid(),
@@ -73,3 +74,6 @@ create index if not exists offers_job_idx on offers(job_id);
 
 -- Hackathon: the backend uses the service-role key, which bypasses RLS.
 -- The dashboard reads through FastAPI (/api/...), so no anon policies are needed.
+
+-- Make Supabase's REST API see new columns right away (otherwise PGRST204 until it refreshes).
+notify pgrst, 'reload schema';

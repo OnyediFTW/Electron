@@ -1,65 +1,213 @@
 <!doctype html>
-<!-- Owner: Person C. STUB dashboard: polls the backend every 2s. Nothing fancy. -->
+<!-- Owner: Person C. Owner's view: summary, associates, jobs + agent trace. Polls the backend. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Electron Dispatch</title>
+<title>Electron Owner View</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#f7f7f5; --fg:#1d1d1b; --muted:#6b6b66; --card:#fff; --line:#e4e4e0; --accent:#2f6fed; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#141413; --fg:#ecece8; --muted:#9a9a93; --card:#1e1e1c; --line:#2e2e2b; --accent:#6c9bff; } }
-  * { box-sizing:border-box; }
-  body { margin:0; font:14px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
-  header { padding:16px 20px; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:baseline; }
-  header h1 { font-size:18px; margin:0; } header span { color:var(--muted); }
-  main { display:grid; grid-template-columns:minmax(260px, 380px) 1fr; min-height:calc(100vh - 56px); }
-  @media (max-width:720px) { main { grid-template-columns:1fr; } }
-  #jobs { border-right:1px solid var(--line); overflow:auto; }
-  .job { padding:12px 20px; border-bottom:1px solid var(--line); cursor:pointer; }
-  .job.sel { background:var(--card); box-shadow:inset 3px 0 var(--accent); }
-  .job .issue { font-weight:600; } .job .meta { color:var(--muted); font-size:12px; }
-  .pill { display:inline-block; padding:1px 8px; border-radius:99px; font-size:11px; border:1px solid var(--line); }
-  .booked { color:#1a8a4a; border-color:currentColor; } .failed { color:#c43c3c; border-color:currentColor; }
-  #trace { padding:16px 20px; overflow:auto; }
-  .ev { display:grid; grid-template-columns:72px 90px 1fr; gap:10px; padding:6px 0; border-bottom:1px dashed var(--line); white-space:pre-wrap; }
-  .ev .t { color:var(--muted); font-variant-numeric:tabular-nums; } .ev .a { font-weight:600; color:var(--accent); }
-  .empty { color:var(--muted); padding:20px; }
+  :root {
+    --bg: #EEF0F2; --panel: #FFFFFF; --ink: #15181C; --muted: #5B626B; --line: #D9DDE2;
+    --steel: #2B3036; --hole: #20242A; --copper: #B45A2A; --tape: #2449B8;
+    --s-open: #2449B8; --s-work: #1F7A45; --s-fail: #B42318; --s-wait: #8A5A00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #15181C; --panel: #1E2227; --ink: #ECEEF0; --muted: #A3AAB3; --line: #2F343B;
+      --copper: #E08A5A; --tape: #3B63D6; --s-open: #8FA8FF; --s-work: #5FCB8A; --s-fail: #FF8A80; --s-wait: #E8B04A; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 'IBM Plex Sans', system-ui, sans-serif; }
+  header { background-color: var(--steel); background-image: radial-gradient(circle at center, var(--hole) 0 2.5px, transparent 3px); background-size: 24px 24px; color: #F3F4F1; padding: 20px 24px 0; }
+  .brand { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .brand h1 { margin: 0; font: 700 34px/1 'Barlow Condensed', sans-serif; letter-spacing: .02em; text-transform: uppercase; }
+  .brand span { color: #C9CDD2; font-size: 14px; }
+  #live { margin-left: auto; font: 500 12px 'IBM Plex Mono', monospace; color: #C9CDD2; display: inline-flex; gap: 8px; align-items: center; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #7BD88F; }
+  .dot.off { background: #E5A15A; }
+  nav { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+  nav button { appearance: none; border: 0; cursor: pointer; background: #3A4048; color: #DADDE0; font: 600 13px 'IBM Plex Mono', monospace; letter-spacing: .16em; text-transform: uppercase; padding: 9px 14px; border-radius: 2px 2px 0 0; }
+  nav button[aria-selected="true"] { background: var(--tape); color: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.18); }
+  nav button:focus-visible, .row:focus-visible { outline: 3px solid #FFB27A; outline-offset: 2px; }
+  main { max-width: 1280px; margin: 0 auto; padding: 24px; }
+  .hidden { display: none !important; }
+  h2 { margin: 0 0 12px; font: 700 22px/1.1 'Barlow Condensed', sans-serif; letter-spacing: .03em; text-transform: uppercase; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px; }
+  .muted { color: var(--muted); }
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .kpi .n { font: 700 40px/1 'Barlow Condensed', sans-serif; margin-top: 6px; }
+  .kpi .n.money { color: var(--copper); }
+  .kpi .l { font-size: 13px; color: var(--muted); }
+  .kpi .s { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; }
+  @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
+
+  .list { display: flex; flex-direction: column; }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 10px 2px; border-top: 1px solid var(--line); cursor: pointer; background: none; border-left: 0; border-right: 0; border-bottom: 0; text-align: left; color: inherit; font: inherit; width: 100%; }
+  .row:first-child { border-top: 0; }
+  .row:hover .t { text-decoration: underline; }
+  .t { font-weight: 600; }
+  .sub { font-size: 13px; color: var(--muted); grid-column: 1 / -1; }
+  .pill { font: 600 11px 'IBM Plex Mono', monospace; letter-spacing: .08em; text-transform: uppercase; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; align-self: start; white-space: nowrap; }
+  .st-new, .st-triaged, .st-offered, .st-offer-pending { color: var(--s-wait); }
+  .st-accepted, .st-booked, .st-on-a-job { color: var(--s-work); }
+  .st-failed { color: var(--s-fail); }
+  .st-available { color: var(--muted); }
+  .empty { color: var(--muted); padding: 10px 2px; }
+
+  .flowhead { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font: 600 13px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+  .flowhead b { color: var(--ink); }
+  .pipe { flex: 0 0 36px; height: 8px; border-radius: 2px; background: linear-gradient(180deg, #F0B38C, #CF7742 40%, #8E4521); }
+  .board { display: grid; grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); gap: 20px; align-items: start; }
+  @media (max-width: 860px) { .board { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .incoming .card + .card { margin-top: 10px; }
+  .assoc { display: grid; grid-template-columns: minmax(260px, 340px) 40px minmax(0, 1fr); align-items: center; margin-bottom: 12px; }
+  @media (max-width: 860px) { .assoc { grid-template-columns: 1fr; } .assoc .pipe { display: none; } }
+  .assoc .pipe { width: 40px; flex: none; }
+  .name { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+  .name strong { font-size: 16px; }
+  .desc { font-size: 13px; color: var(--muted); margin: 4px 0 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { font: 500 11px 'IBM Plex Mono', monospace; padding: 2px 7px; border-radius: 4px; background: color-mix(in srgb, var(--muted) 14%, transparent); }
+  .stats { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .custs { display: flex; flex-wrap: wrap; gap: 8px; }
+  .cust { background: var(--panel); border: 1px dashed var(--line); border-radius: 8px; padding: 8px 12px; min-width: 200px; }
+  .cust .t { font-size: 14px; }
+  .none { color: var(--muted); font-size: 13px; padding: 8px 0; }
+
+  .jobs { display: grid; grid-template-columns: minmax(260px, 380px) minmax(0, 1fr); gap: 16px; }
+  @media (max-width: 860px) { .jobs { grid-template-columns: 1fr; } }
+  .row.sel { background: color-mix(in srgb, var(--tape) 10%, transparent); }
+  .ev { display: grid; grid-template-columns: 76px 84px minmax(0, 1fr); gap: 10px; padding: 7px 0; border-top: 1px dashed var(--line); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+  .ev .a { font: 600 12px 'IBM Plex Mono', monospace; color: var(--tape); }
+  @media (prefers-color-scheme: dark) { .ev .a { color: #8FA8FF; } }
+  @media (max-width: 560px) { .ev { grid-template-columns: 1fr; gap: 2px; } }
 </style>
 </head>
 <body>
-<header><h1>Electron</h1><span id="status">connecting…</span></header>
-<main>
-  <section id="jobs"><div class="empty">No jobs yet. Text the Photon number.</div></section>
-  <section id="trace"><div class="empty">Select a job to see each agent step.</div></section>
-</main>
-<script>
-let selected = null;
-const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+<header>
+  <div class="brand">
+    <h1>Electron</h1><span>Owner's view</span>
+    <span id="live"><span id="dot" class="dot"></span><span id="status">Connecting…</span></span>
+  </div>
+  <nav role="tablist" aria-label="Sections">
+    <button role="tab" aria-selected="true" data-tab="overview">Overview</button>
+    <button role="tab" aria-selected="false" data-tab="associates">Associates</button>
+    <button role="tab" aria-selected="false" data-tab="jobs">Jobs</button>
+  </nav>
+</header>
 
-async function tick() {
-  try {
-    const jobs = await (await fetch("/api/jobs")).json();
-    document.getElementById("status").textContent = `${jobs.length} jobs · live`;
-    if (!selected && jobs.length) selected = jobs[0].id;
-    document.getElementById("jobs").innerHTML = jobs.length ? jobs.map(j => `
-      <div class="job ${j.id === selected ? "sel" : ""}" onclick="selected='${j.id}';tick()">
-        <div class="issue">${esc(j.issue || j.raw_text || "(new)")}</div>
-        <div class="meta"><span class="pill ${j.status}">${j.status}</span>
-          ${esc(j.urgency || "")} · ${esc(j.customer_phone)}
-          ${j.assigned_tech_name ? " · " + esc(j.assigned_tech_name) : ""}
-          ${j.quote ? ` · $${j.quote.low}–$${j.quote.high}` : ""}</div>
-      </div>`).join("") : `<div class="empty">No jobs yet. Text the Photon number.</div>`;
-    if (selected) {
-      const evs = await (await fetch(`/api/jobs/${selected}/events`)).json();
-      document.getElementById("trace").innerHTML = evs.map(e => `
-        <div class="ev"><span class="t">${new Date(e.created_at).toLocaleTimeString()}</span>
-        <span class="a">${esc(e.agent)}</span><span>${esc(e.message)}</span></div>`).join("");
-    }
-  } catch (e) {
-    document.getElementById("status").textContent = "backend unreachable";
+<main>
+  <section id="overview" role="tabpanel">
+    <div class="kpis" id="kpis"></div>
+    <div class="cols">
+      <div class="panel"><h2>Needs you</h2><div class="list" id="needs"></div></div>
+      <div class="panel"><h2>Recent jobs</h2><div class="list" id="recent"></div></div>
+    </div>
+  </section>
+
+  <section id="associates" role="tabpanel" class="hidden">
+    <div class="flowhead"><b>Customers</b><span class="pipe" aria-hidden="true"></span><b>Associates</b><span class="pipe" aria-hidden="true"></span><b>Their customers</b></div>
+    <div class="board">
+      <div class="incoming"><h2>Incoming</h2><div id="incoming"></div></div>
+      <div><h2>Associates</h2><div id="assocs"></div></div>
+    </div>
+  </section>
+
+  <section id="jobs" role="tabpanel" class="hidden">
+    <div class="jobs">
+      <div class="panel"><h2>All jobs</h2><div class="list" id="joblist"></div></div>
+      <div class="panel"><h2 id="traceTitle">Agent trace</h2><div id="trace" class="muted">Pick a job to see each step.</div></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const who = p => /^\+1\d{10}$/.test(p || "") ? p.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "($1) $2-$3") : (p || "unknown");
+const money = q => q ? `$${Math.round(q.low)}–$${Math.round(q.high)}` : "no quote";
+const ago = iso => { if (!iso) return ""; const m = Math.round((Date.now() - new Date(iso)) / 60000);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
+const pill = s => `<span class="pill st-${esc(String(s).replace(/ /g, "-"))}">${esc(s)}</span>`;
+let tab = "overview", selected = null;
+
+function jobRow(j, extra = "") {
+  return `<button class="row" data-job="${esc(j.id)}">
+    <span class="t">${esc(j.issue)}</span>${pill(j.status)}
+    <span class="sub">${esc(who(j.customer))} · ${ago(j.created_at)}${j.tech ? " · " + esc(j.tech) : ""} · ${money(j.quote)}${extra}</span>
+  </button>`;
+}
+
+async function getJSON(u) { const r = await fetch(u, { cache: "no-store" }); if (!r.ok) throw new Error(r.status); return r.json(); }
+
+async function loadOverview() {
+  const s = await getJSON("/api/owner/summary");
+  const rate = s.acceptance_rate == null ? "–" : Math.round(s.acceptance_rate * 100) + "%";
+  $("kpis").innerHTML = [
+    ["Open jobs", s.open, "being triaged or offered"],
+    ["Techs working", s.working, "accepted jobs in progress"],
+    ["Last 24 hours", s.jobs_24h, `${s.accepted_24h} accepted · ${s.failed_24h} failed`],
+    ["Acceptance rate", rate, `${s.offers_responded} offers answered`],
+    ["Accepted work", s.pipeline.jobs ? `$${Math.round(s.pipeline.low)}–${Math.round(s.pipeline.high)}` : "$0", `estimated, ${s.pipeline.jobs} jobs`],
+  ].map(([l, n, sub], i) => `<div class="panel kpi"><div class="l">${l}</div><div class="n${i === 4 ? " money" : ""}">${esc(n)}</div><div class="s">${esc(sub)}</div></div>`).join("");
+  $("needs").innerHTML = s.needs_you.length ? s.needs_you.map(j => jobRow(j, ` · <strong>${esc(j.reason)}</strong>`)).join("")
+    : `<div class="empty">Nothing needs you right now.</div>`;
+  $("recent").innerHTML = s.recent.length ? s.recent.map(j => jobRow(j)).join("") : `<div class="empty">No jobs yet. They appear when a customer texts.</div>`;
+}
+
+async function loadAssociates() {
+  const a = await getJSON("/api/owner/associates");
+  $("incoming").innerHTML = a.incoming.length ? a.incoming.map(j => `<div class="card">
+      <div class="name"><strong>${esc(who(j.customer))}</strong>${pill(j.status)}</div>
+      <div class="desc">${esc(j.issue)}</div>
+      <div class="stats">${j.offered_to ? "Offered to " + esc(j.offered_to) + " · " : ""}${ago(j.created_at)}</div></div>`).join("")
+    : `<div class="card none">No customers waiting. New texts land here first.</div>`;
+  $("assocs").innerHTML = a.associates.map(t => `<div class="assoc">
+      <div class="card">
+        <div class="name"><strong>${esc(t.name)}</strong>${pill(t.state)}</div>
+        <div class="desc">${esc(t.description || "No description yet")}</div>
+        <div class="chips">${t.skills.map(s => `<span class="chip">${esc(s.replace("_", " "))}</span>`).join("")}<span class="chip">★ ${esc(t.rating)}</span></div>
+        <div class="stats">${t.stats.offered} offers · ${t.stats.yes} yes · ${t.stats.no} no · ${t.stats.timeout} no reply</div>
+      </div>
+      <span class="pipe" aria-hidden="true"></span>
+      <div class="custs">${t.customers.length ? t.customers.map(c => `<div class="cust">
+          <div class="t">${esc(who(c.customer))}</div><div class="sub">${esc(c.issue)} · ${money(c.quote)}</div></div>`).join("")
+        : `<span class="none">No customers right now</span>`}</div>
+    </div>`).join("");
+}
+
+async function loadJobs() {
+  const jobs = await getJSON("/api/jobs");
+  $("joblist").innerHTML = jobs.length ? jobs.map(j => jobRow({ id: j.id, issue: j.issue || (j.raw_text || "").split("\n")[0] || "(no description)",
+      status: j.status, customer: j.customer_phone, tech: j.assigned_tech_name, quote: j.quote })).join("")
+    : `<div class="empty">No jobs yet.</div>`;
+  document.querySelectorAll("#joblist .row").forEach(r => r.classList.toggle("sel", r.dataset.job === selected));
+  if (selected) {
+    const evs = await getJSON(`/api/jobs/${encodeURIComponent(selected)}/events`);
+    $("trace").innerHTML = evs.map(e => `<div class="ev"><span class="muted mono">${new Date(e.created_at).toLocaleTimeString([], {hour: "numeric", minute: "2-digit", second: "2-digit"})}</span>
+      <span class="a">${esc(e.agent)}</span><span>${esc(e.message)}</span></div>`).join("") || "No steps logged yet.";
   }
 }
-tick(); setInterval(tick, 2000);
+
+const loaders = { overview: loadOverview, associates: loadAssociates, jobs: loadJobs };
+async function tick() {
+  try { await loaders[tab](); $("dot").className = "dot"; $("status").textContent = "Live · updates every 3 s"; }
+  catch (e) { $("dot").className = "dot off"; $("status").textContent = "Can't reach the Electron server"; }
+}
+function show(name) {
+  tab = name;
+  document.querySelectorAll("nav button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+  for (const k of Object.keys(loaders)) $(k).classList.toggle("hidden", k !== name);
+  tick();
+}
+document.querySelector("nav").addEventListener("click", e => { const b = e.target.closest("button[data-tab]"); if (b) show(b.dataset.tab); });
+document.addEventListener("click", e => { const r = e.target.closest("[data-job]"); if (r) { selected = r.dataset.job; show("jobs"); } });
+show("overview"); setInterval(tick, 3000);
 </script>
 </body>
 </html>
