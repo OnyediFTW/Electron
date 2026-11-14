@@ -132,7 +132,9 @@ def _triage(job: Job) -> None:
             if db.get_job(job.id).status != JobStatus.new:
                 return  # someone already moved it on
             db.update_job_fields(job.id, trade=triaged.trade, issue=triaged.issue, urgency=triaged.urgency,
-                                 parts=parts, location=triaged.location or _demo_location(), quote=q)
+                                 parts=parts, location=triaged.location or _demo_location(), quote=q,
+                                 **({"photo_description": triaged.photo_description}
+                                    if triaged.photo_description else {}))
             advance(job.id, JobStatus.triaged)
             send_text(job.customer_phone, "Got it, finding a plumber for you now.", job_id=job.id)
             offer_next(job.id)
@@ -188,7 +190,8 @@ def _offer_text(job: Job, reasons: list[str]) -> str:
     else:
         head = "New job: we don't know what the problem is yet"
     parts = "; ".join(f"{p.name} (likely, {p.confidence:.0%})" for p in job.parts) or "unknown"
-    return "\n".join([head, f'Customer said: "{job.raw_text}"', f"Parts: {parts}",
+    photo = [f"Photo shows: {job.photo_description}"] if job.photo_description else []
+    return "\n".join([head, f'Customer said: "{job.raw_text}"', *photo, f"Parts: {parts}",
                       f"Quote: {_quote_text(job)}", f"Why you: {', '.join(reasons)}", "Reply YES or NO."])
 
 
