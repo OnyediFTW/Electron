@@ -4,12 +4,13 @@ Vision LLM triage: photo + customer text -> structured Job (trade, issue,
 urgency, likely parts with confidence). If the photo is unclear or not
 plumbing, sets job.follow_up_question instead of guessing.
 
-FALLBACK: with no ANTHROPIC_API_KEY, or if the API call fails, a keyword
+Uses Gemini (google-genai) with a JSON response schema.
+
+FALLBACK: with no GEMINI_API_KEY, or if the API call fails, a keyword
 table triages from the text alone so the demo loop never stops.
 """
 from __future__ import annotations
 
-import base64
 import io
 import os
 import time
@@ -22,7 +23,7 @@ from pydantic import BaseModel, ValidationError
 from shared.db import log_event
 from shared.schema import Job, Part, Urgency
 
-INTAKE_MODEL = os.getenv("INTAKE_MODEL", "claude-sonnet-5-5")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 MAX_EDGE_PX = 1568
 DEFAULT_FOLLOW_UP = "Can you send a closer photo of where the water is coming from?"
 PLUMBING_TRADES = {"plumbing", "drain", "water_heater", "gas", "sewer"}
@@ -69,8 +70,8 @@ class IntakeResult(BaseModel):
 
 # ---------- image loading ----------
 
-def _load_image(photo_url: Optional[str]) -> Optional[tuple[str, str]]:
-    """Return (media_type, base64) or None. Accepts http(s) URLs and local paths."""
+def _load_image(photo_url: Optional[str]) -> Optional[tuple[str, bytes]]:
+    """Return (mime_type, jpeg_bytes) or None. Accepts http(s) URLs and local paths."""
     if not photo_url:
         return None
     if photo_url.startswith(("http://", "https://")):
@@ -93,35 +94,38 @@ def _load_image(photo_url: Optional[str]) -> Optional[tuple[str, str]]:
         img = img.convert("RGB")
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=85)
-    return "image/jpeg", base64.standard_b64encode(buf.getvalue()).decode()
+    return "image/jpeg", buf.getvalue()
 
 
 # ---------- LLM call ----------
 
-def _call_llm(image: Optional[tuple[str, str]], text: str) -> IntakeResult:
-    import anthropic
+def _call_llm(image: Optional[tuple[str, bytes]], text: str) -> IntakeResult:
+    from google import genai
+    from google.genai import types
 
-    client = anthropic.Anthropic(timeout=20.0, max_retries=1)
-    content: list[dict] = []
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"),
+                          http_options=types.HttpOptions(timeout=20_000))  # ms
+    contents: list = []
     if image:
-        media_type, data = image
-        content.append({"type": "image", "source": {"type": "base64", "media_type": media_type, "data": data}})
-    content.append({"type": "text", "text": f"Customer text: {text or '(no text)'}"
-                    + ("" if image else "\n(No photo was attached.)")})
-    kwargs = dict(model=INTAKE_MODEL, max_tokens=2000, system=SYSTEM_PROMPT,
-                  messages=[{"role": "user", "content": content}],
-                  output_format=IntakeResult, output_config={"effort": "low"})
-    try:
-        # Server-side refusal fallback: a declined request is re-run on a fallback model.
-        resp = client.beta.messages.parse(**kwargs, betas=["server-side-fallback-2026-07-01"],
-                                          fallbacks="default")
-    except anthropic.BadRequestError:
-        resp = client.messages.parse(**kwargs)
-    if resp.stop_reason == "refusal":
-        raise RuntimeError("model refused")
-    if resp.parsed_output is None:
-        raise ValueError(f"no parsed output (stop_reason={resp.stop_reason})")
-    return resp.parsed_output
+        mime_type, data = image
+        contents.append(types.Part.from_bytes(data=data, mime_type=mime_type))
+    contents.append(f"Customer text: {text or '(no text)'}" + ("" if image else "\n(No photo was attached.)"))
+
+    resp = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=contents,
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            response_mime_type="application/json",
+            response_schema=IntakeResult,
+            temperature=0.2,
+        ),
+    )
+    if isinstance(resp.parsed, IntakeResult):
+        return resp.parsed
+    if resp.text:  # schema parse failed in the SDK: validate ourselves (raises ValidationError)
+        return IntakeResult.model_validate_json(resp.text)
+    raise ValueError("empty response (possibly blocked by safety filters)")
 
 
 # ---------- FALLBACK: keyword triage ----------
@@ -178,7 +182,7 @@ def intake(photo_url: Optional[str], text: str, *, customer_phone: str = "",
     result: Optional[IntakeResult] = None
     path = "vision" if image else "text-only"
     started = time.monotonic()
-    if os.getenv("ANTHROPIC_API_KEY"):
+    if os.getenv("GEMINI_API_KEY"):
         for attempt in (1, 2):  # retry once on a parse/validation failure
             try:
                 result = _call_llm(image, text)
@@ -213,7 +217,7 @@ def intake(photo_url: Optional[str], text: str, *, customer_phone: str = "",
         parts=[Part(name=p.name, confidence=min(1.0, max(0.0, p.confidence))) for p in result.parts],
         follow_up_question=follow_up,
     )
-    model_note = f"{INTAKE_MODEL}, {latency:.1f}s" if path in ("vision", "text-only") else "no LLM"
+    model_note = f"{GEMINI_MODEL}, {latency:.1f}s" if path in ("vision", "text-only") else "no LLM"
     log_event(job.id, "intake",
               f"[{path}, {model_note}] {job.trade} / {job.urgency.value} urgency: {job.issue}; "
               f"{len(job.parts)} likely parts" + (f"; asking: {follow_up!r}" if follow_up else ""))

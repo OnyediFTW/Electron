@@ -18,7 +18,7 @@ args = ap.parse_args()
 
 os.environ["SUPABASE_URL"] = ""  # never write test jobs to the real database
 if args.offline:
-    for k in ("ANTHROPIC_API_KEY", "EBAY_CLIENT_ID", "EBAY_CLIENT_SECRET", "SERPAPI_KEY"):
+    for k in ("GEMINI_API_KEY", "EBAY_CLIENT_ID", "EBAY_CLIENT_SECRET", "SERPAPI_KEY"):
         os.environ[k] = ""  # set before shared.db runs load_dotenv(), which won't override
 
 from agents import find_parts, intake, quote  # noqa: E402
