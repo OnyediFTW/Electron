@@ -73,6 +73,8 @@ class Job(BaseModel):
     # Set by intake() when the photo is unclear: ask this instead of guessing.
     # Not stored in the jobs table.
     follow_up_question: Optional[str] = None
+    # Set by intake() when there's a photo: what the vision model sees, for the tech's offer text.
+    photo_description: Optional[str] = None
 
 
 class Tech(BaseModel):
