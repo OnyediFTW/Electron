@@ -95,7 +95,7 @@
 
   <div class="foot abs" style="left: 96px; top: 960px; width: 1408px; display: flex; flex-wrap: wrap; gap: 8px 36px">
     <span class="live"><span id="dot" class="dot"></span><span id="status">Connecting…</span></span>
-    <span>Problem, parts, price and time stay "unknown" until those agents are connected</span>
+    <span>AI reads the problem, likely parts and price · The plumber sets the arrival time until scheduling is connected</span>
   </div>
 </div>
 
@@ -167,6 +167,11 @@ function render(data) {
   for (const p of data.phones) {
     if (!(p.role in LEFT)) continue;
     const node = slotFor(p);
+    if (node.dataset.key !== p.key) {  // a different plumber moved into this spot: redraw it
+      node.dataset.key = p.key;
+      seen[p.role] = 0;
+      node.querySelector("[data-thread]").replaceChildren();
+    }
     node.querySelector("[data-label]").textContent = p.label;
     node.querySelector("[data-line]").textContent = fmtLine(p.line);
     if (p.role === "customer" && p.line) document.getElementById("custLine").textContent = fmtLine(p.line);
