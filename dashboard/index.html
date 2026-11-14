@@ -77,6 +77,8 @@
   .line .mt { grid-column: 2 / -1; font-size: 13px; color: var(--muted); }
   .ev { display: grid; grid-template-columns: 80px 84px minmax(0, 1fr); gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--rule); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
   .ev .a { font: 600 12px 'IBM Plex Mono', monospace; color: var(--muted); text-transform: uppercase; }
+  #phones { margin: -24px; }
+  #phonesFrame { display: block; width: 100%; height: calc(100vh - 112px); min-height: 520px; border: 0; background: #4B5259; }
   @media (max-width: 560px) { main { padding: 16px; } .report { font-size: 18px; } .ev { grid-template-columns: 1fr; gap: 2px; } }
 </style>
 </head>
@@ -90,6 +92,7 @@
     <button role="tab" aria-selected="true" data-tab="today">Today</button>
     <button role="tab" aria-selected="false" data-tab="crew">Crew</button>
     <button role="tab" aria-selected="false" data-tab="ledger">Job log</button>
+    <button role="tab" aria-selected="false" data-tab="phones">Phones</button>
   </nav>
 </header>
 
@@ -102,6 +105,10 @@
   <section id="crew" role="tabpanel" class="hidden">
     <div class="report"><p>Each customer comes in on the left and lands under the person who took the job.</p></div>
     <div class="board" id="crewboard"></div>
+  </section>
+
+  <section id="phones" role="tabpanel" class="hidden">
+    <iframe id="phonesFrame" title="Live view of the customer and two plumbers' phones" data-src="/phones"></iframe>
   </section>
 
   <section id="ledger" role="tabpanel" class="hidden">
@@ -197,7 +204,12 @@ async function loadLedger() {
   }
 }
 
-const loaders = { today: loadToday, crew: loadCrew, ledger: loadLedger };
+function loadPhones() {  // the phones page polls itself; load it once, the first time the tab opens
+  const f = $("phonesFrame");
+  if (!f.src) f.src = f.dataset.src;
+}
+
+const loaders = { today: loadToday, crew: loadCrew, ledger: loadLedger, phones: loadPhones };
 async function tick() {
   try { await loaders[tab](); $("dot").className = "dot"; $("status").textContent = "Live · every 3 s"; }
   catch (e) { $("dot").className = "dot off"; $("status").textContent = "Can't reach the Electron server"; }
