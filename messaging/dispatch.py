@@ -19,6 +19,9 @@ from shared import db
 from shared.schema import Job, JobStatus, Location, Offer, OfferResponse
 
 OFFER_TIMEOUT_SECONDS = float(os.getenv("OFFER_TIMEOUT_SECONDS", "60"))
+# Off until matching/calendar.py talks to a real calendar: its stub invents free slots,
+# and we don't tell customers a made-up arrival time. Set SCHEDULING_ENABLED=true to use it.
+SCHEDULING_ENABLED = os.getenv("SCHEDULING_ENABLED", "false").lower() in ("1", "true", "yes")
 
 YES = re.compile(r"^\s*(y|ya|yes|yep|yeah|sure|ok|okay|on it|accept)\b", re.I)
 NO = re.compile(r"^\s*(n|no|nope|nah|can'?t|cannot|pass|decline)\b", re.I)
@@ -224,7 +227,7 @@ def handle_tech_reply(tech_id: str, text: str) -> None:
 
 def _schedule(job_id: str, tech_id: str) -> None:
     job, tech = db.get_job(job_id), db.get_tech(tech_id)
-    slots = free_slots(tech_id)
+    slots = free_slots(tech_id) if SCHEDULING_ENABLED else []
     if not slots:
         # Scheduling isn't connected yet: say so instead of inventing a time.
         db.log_event(job_id, "calendar", "no scheduling yet: time to be arranged between tech and customer")
