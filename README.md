@@ -23,9 +23,7 @@ Every new job costs the owner time:
 General marketplaces (Facebook Marketplace, Craigslist, Nextdoor) make it worse: no
 structured photos of the actual problem, slow or no responses, and no scheduling.
 
-**Validation:** we called the owner of a local plumbing company. He said this would
-save him a lot of time and help his customers. _(TODO: name, role, and his exact
-words about which step costs him the most time.)_
+Validation: on Nov 14, 2026 we called Sean Zhang, a self-employed freelance plumber who runs his own business. He told us the idea fits how his business works and would help him. (Paraphrased from a phone call.)
 
 ## Who uses it
 
