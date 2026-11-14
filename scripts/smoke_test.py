@@ -61,7 +61,7 @@ assert job2.status == JobStatus.offered
 # Workload: the tech already on a job is ranked below free techs and says so.
 from matching import rank_techs  # noqa: E402
 busy = next(r for r in rank_techs(job2) if r.tech_id == second.id)
-assert "on 1 job" in busy.reasons, busy.reasons
+assert "1 open jobs" in busy.reasons, busy.reasons  # C's rank_techs wording
 
 # Restart: timers are lost; resume_offers re-arms them and times out overdue ones.
 for t in list(dispatch._timers.values()):
