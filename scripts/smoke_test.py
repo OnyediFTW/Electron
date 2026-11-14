@@ -6,6 +6,7 @@ Customer texts -> offer to tech #1 -> customer adds a detail (same job, tech #1 
 Run: python -m scripts.smoke_test     (A runs this after every merge)
 """
 import os
+import time
 
 os.environ["SUPABASE_URL"] = ""  # always run against the in-memory store
 os.environ["PHOTON_API_KEY"] = ""  # never send real iMessages from the smoke test
@@ -54,6 +55,52 @@ assert any("when can you come?" in t for t in texts_to(second.phone)), texts_to(
 # "new job" always starts a fresh job.
 dispatch.handle_inbound(CUSTOMER, "new job: toilet keeps running")
 assert len(db.list_jobs()) == 2, "'new job' should open a second job"
+job2 = db.list_jobs()[-1]
+assert job2.status == JobStatus.offered
+
+# Workload: the tech already on a job is ranked below free techs and says so.
+from matching import rank_techs  # noqa: E402
+busy = next(r for r in rank_techs(job2) if r.tech_id == second.id)
+assert "1 open jobs" in busy.reasons, busy.reasons  # C's rank_techs wording
+
+# Restart: timers are lost; resume_offers re-arms them and times out overdue ones.
+for t in list(dispatch._timers.values()):
+    t.cancel()
+dispatch._timers.clear()
+pending = [o for o in db.list_offers(job2.id) if o.response is None][0]
+db.store.update("offers", pending.id, {"sent_at": "2000-01-01T00:00:00+00:00"})
+assert dispatch.resume_offers() == 1
+time.sleep(0.5)
+offers2 = db.list_offers(job2.id)
+assert offers2[0].response == "timeout" and len(offers2) == 2, offers2
+
+# Owner's view API reads the same data.
+from fastapi.testclient import TestClient  # noqa: E402
+
+from main import app  # noqa: E402
+
+client = TestClient(app)
+s = client.get("/api/owner/summary").json()
+assert s["working"] == 1 and s["open"] == 1 and s["jobs_24h"] == 2, s
+a = client.get("/api/owner/associates").json()
+on_job = next(x for x in a["associates"] if x["name"] == second.name)
+assert on_job["state"] == "on a job" and on_job["customers"][0]["customer"] == CUSTOMER, on_job
+assert a["incoming"] and a["incoming"][0]["id"] == job2.id, a["incoming"]
+assert all(x["description"] for x in a["associates"]), "every tech should have a description"
+
+# Unreachable techs (never texted the Photon line) are skipped, not offered and waited on.
+from messaging import photon  # noqa: E402
+
+reachable = {second.phone}  # only the lower-ranked, busy tech can be texted
+photon.configured = lambda: True
+photon.get_contact = lambda p: {"space_id": "s", "line_user_id": "u"} if p in reachable else None
+photon.send = lambda *a, **k: None
+dispatch.handle_inbound("+16095550199", "new job: kitchen faucet dripping")
+job3 = db.list_jobs()[-1]
+offers3 = db.list_offers(job3.id)
+assert len(offers3) == 1 and offers3[0].tech_id == second.id, offers3
+assert any(e["message"].startswith("skipped") and first.name in e["message"] for e in db.list_events(job3.id))
 
 print(f"\nPASS: follow-ups joined the open job, {first.name} declined, {second.name} accepted, "
-      f"'new job' opened a second job. {len(db.list_messages())} messages logged.")
+      f"'new job' opened a second job, workload ranking, restart resume, owner API, "
+      f"unreachable techs skipped. {len(db.list_messages())} messages logged.")

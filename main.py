@@ -6,16 +6,24 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 
+from dashboard.api import router as owner_router
 from messaging import photon
+from messaging.dispatch import resume_offers
 from messaging.webhook import router as messaging_router
 from shared import db
 from shared.seed import seed
 
 app = FastAPI(title="Electron")
 app.include_router(messaging_router)
+app.include_router(owner_router)
 
 if db.BACKEND == "memory":
     seed()  # FALLBACK store starts empty every run
+
+try:  # offers made before a restart would otherwise wait forever (timers live in memory)
+    resume_offers()
+except Exception as e:
+    print(f"[startup] resume_offers failed: {e!r}")
 
 
 @app.get("/health")
@@ -48,8 +56,15 @@ def api_threads(since: str | None = None):
     """Live three-phone view: messages after `since` for the customer and the two demo techs.
     No `since` = just the server time, so the page starts blank. No raw phone numbers out:
     the tunnel makes this public."""
-    now = datetime.now(timezone.utc).isoformat()
-    msgs = db.list_messages(since) if since else []
+    if since:
+        msgs = db.list_messages(since)
+        now = msgs[-1]["created_at"] if msgs else since
+    else:
+        # Start the page's cursor at the newest stored message (database clock), not this
+        # machine's clock, so clock drift between the laptop and Supabase can't hide texts.
+        latest = db.list_messages()
+        now = latest[-1]["created_at"] if latest else datetime.now(timezone.utc).isoformat()
+        msgs = []
     tech_phones = [p for p in (os.getenv("TECH_PHONE_1"), os.getenv("TECH_PHONE_2")) if p]
     names = {t.phone: t.name for t in db.list_techs()}
     customers = [m["phone"] for m in msgs if m["phone"] not in tech_phones]
@@ -62,10 +77,19 @@ def api_threads(since: str | None = None):
                               "photo_url": m.get("photo_url"), "created_at": m["created_at"]}
                              for m in msgs if m["phone"] == phone]}
 
-    phones = [thread("customer", "Customer · you", customer)]
-    for i, p in enumerate(tech_phones):
-        role = "tech" if i == 0 else "backup"
-        phones.append(thread(role, f"{'Tech' if i == 0 else 'Backup'} · {names.get(p, 'tech').split()[0]}", p))
+    # Middle phone = the plumber who got the first offer this session (ranking decides who
+    # that is); before any offer, keep the .env order.
+    first_out = {}
+    for m in msgs:
+        if m["direction"] == "out" and m["phone"] in tech_phones:
+            first_out.setdefault(m["phone"], m["created_at"])
+    ordered = sorted(tech_phones, key=lambda p: (p not in first_out, first_out.get(p, ""), tech_phones.index(p)))
+
+    phones = [{**thread("customer", "Customer · you", customer), "key": "customer"}]
+    for i, p in enumerate(ordered):
+        first = names.get(p, "tech").split()[0]
+        role, label = ("tech", f"Plumber · {first}") if i == 0 else ("backup", f"Backup · {first}")
+        phones.append({**thread(role, label, p), "key": first})
     return {"server_time": now, "phones": phones}
 
 

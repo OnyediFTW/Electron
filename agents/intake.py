@@ -25,7 +25,7 @@ from shared.schema import Job, Part, Urgency
 
 # Tried in order: if one is overloaded (503) or fails, the next one answers.
 GEMINI_MODELS = [m.strip() for m in os.getenv(
-    "GEMINI_MODELS", "gemini-3.5-flash-lite,gemini-3.6-flash").split(",") if m.strip()]
+    "GEMINI_MODELS", "gemini-3.5-flash-lite,gemini-3.1-flash-lite,gemini-3.6-flash").split(",") if m.strip()]
 MAX_EDGE_PX = 1568
 DEFAULT_FOLLOW_UP = "Can you send a closer photo of where the water is coming from?"
 PLUMBING_TRADES = {"plumbing", "drain", "water_heater", "gas", "sewer"}
@@ -54,7 +54,12 @@ a photo is at most 0.7 unless it is clearly visible or stated.
 doesn't name it, or if the job is not plumbing. The description alone is enough when \
 it clearly names the problem.
 - follow_up_question: when clear_enough is false, one short, friendly question for the \
-customer (e.g. "Is water actively leaking right now?"). Otherwise null."""
+customer (e.g. "Is water actively leaking right now?"). Otherwise null.
+- photo_description: only if a photo is attached, 2-3 plain sentences for the technician \
+who will get this job, describing only what is visible: the fixture and room, pipe and \
+fitting materials (PVC, copper, PEX, chrome, galvanized), visible sizes, where the water, \
+damage or clog is, and anything that changes the job (corrosion, cramped access, shutoff \
+valve visible or not). Don't guess at what you can't see. Null if there is no photo."""
 
 
 class _IntakePart(BaseModel):
@@ -69,6 +74,7 @@ class IntakeResult(BaseModel):
     parts: list[_IntakePart]
     clear_enough: bool
     follow_up_question: Optional[str] = None
+    photo_description: Optional[str] = None
 
 
 # ---------- image loading ----------
@@ -220,9 +226,12 @@ def intake(photo_url: Optional[str], text: str, *, customer_phone: str = "",
         urgency=Urgency(result.urgency),
         parts=[Part(name=p.name, confidence=min(1.0, max(0.0, p.confidence))) for p in result.parts],
         follow_up_question=follow_up,
+        photo_description=(result.photo_description or None) if image else None,
     )
     model_note = f"{used_model}, {latency:.1f}s" if path in ("vision", "text-only") else "no LLM"
     log_event(job.id, "intake",
               f"[{path}, {model_note}] {job.trade} / {job.urgency.value} urgency: {job.issue}; "
               f"{len(job.parts)} likely parts" + (f"; asking: {follow_up!r}" if follow_up else ""))
+    if job.photo_description:
+        log_event(job.id, "intake", f"photo: {job.photo_description}")
     return job
