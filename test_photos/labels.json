@@ -1,0 +1,10 @@
+[
+  {"file": "ptrap_leak.jpg", "text": "water dripping under my kitchen sink", "expected_trade": "plumbing", "expected_urgency": "high", "issue_keywords": ["trap", "leak"]},
+  {"file": "clogged_drain.jpg", "text": "bathroom sink drains really slow", "expected_trade": "drain", "expected_urgency": "medium", "issue_keywords": ["clog", "drain", "slow"]},
+  {"file": "running_toilet.jpg", "text": "toilet won't stop running", "expected_trade": "plumbing", "expected_urgency": "medium", "issue_keywords": ["toilet"]},
+  {"file": "water_heater.jpg", "text": "no hot water since this morning", "expected_trade": "water_heater", "expected_urgency": "high", "issue_keywords": ["heater", "hot water"]},
+  {"file": "dripping_faucet.jpg", "text": "faucet keeps dripping all night", "expected_trade": "plumbing", "expected_urgency": "medium", "issue_keywords": ["faucet", "drip"]},
+  {"file": "burst_supply_line.jpg", "text": "water spraying from under the vanity", "expected_trade": "plumbing", "expected_urgency": "high", "issue_keywords": ["supply"]},
+  {"file": "outlet.jpg", "text": "this stopped working", "expected_trade": "electrical", "expected_urgency": null, "issue_keywords": [], "expect_follow_up": true},
+  {"file": "blurry.jpg", "text": "something is wrong here", "expected_trade": null, "expected_urgency": null, "issue_keywords": [], "expect_follow_up": true}
+]
