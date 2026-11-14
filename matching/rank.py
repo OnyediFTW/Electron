@@ -3,12 +3,13 @@
 Matching is an algorithm, not an LLM call. Keep the weights here, in one dict,
 and return human-readable reasons that go straight into the tech's offer text.
 
-STUB: skill filter + distance + rating only. Still to add: calendar
-free/busy in the next 48h and current open jobs.
+Skill filter + distance + rating + workload. Still to add: calendar free/busy
+in the next 48h (weight 0 until matching/calendar.py is real).
 """
 import math
+from collections import Counter
 
-from shared.db import list_techs, log_event
+from shared.db import list_jobs, list_techs, log_event
 from shared.schema import Job, RankedTech
 
 WEIGHTS = {
@@ -16,7 +17,7 @@ WEIGHTS = {
     "distance": 30.0,   # closer is better, 0 at >= MAX_MILES
     "rating": 20.0,     # 0-5 stars scaled
     "free": 0.0,        # TODO(C): free/busy next 48h
-    "workload": 0.0,    # TODO(C): fewer open jobs is better
+    "workload": 15.0,   # subtracted per job the tech already has (accepted or booked)
 }
 MAX_MILES = 25.0
 
@@ -29,6 +30,8 @@ def miles(a: tuple[float, float], b: tuple[float, float]) -> float:
 
 def rank_techs(job: Job) -> list[RankedTech]:
     here = (job.location.lat, job.location.lng) if job.location else None
+    busy = Counter(j.assigned_tech_id for j in list_jobs()
+                   if j.assigned_tech_id and j.status.value in ("accepted", "booked") and j.id != job.id)
     ranked = []
     for t in list_techs():
         if job.trade and job.trade not in t.skills:
@@ -40,8 +43,11 @@ def rank_techs(job: Job) -> list[RankedTech]:
             where = f"{d:.1f} mi away"
         else:
             where = "distance unknown"
+        n = busy.get(t.id, 0)
+        score -= WEIGHTS["workload"] * n
+        load = "free now" if n == 0 else f"on {n} job" + ("s" if n > 1 else "")
         ranked.append(RankedTech(tech_id=t.id, score=round(score, 1),
-                                 reasons=[f"{job.trade} skill", where, f"{t.rating} stars"]))
+                                 reasons=[f"{job.trade} skill", where, f"{t.rating} stars", load]))
     ranked.sort(key=lambda r: r.score, reverse=True)
     log_event(job.id, "matching", f"ranked {len(ranked)} techs, top score {ranked[0].score if ranked else '-'}")
     return ranked

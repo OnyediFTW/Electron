@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 
 from dashboard.api import router as owner_router
 from messaging import photon
+from messaging.dispatch import resume_offers
 from messaging.webhook import router as messaging_router
 from shared import db
 from shared.seed import seed
@@ -18,6 +19,11 @@ app.include_router(owner_router)
 
 if db.BACKEND == "memory":
     seed()  # FALLBACK store starts empty every run
+
+try:  # offers made before a restart would otherwise wait forever (timers live in memory)
+    resume_offers()
+except Exception as e:
+    print(f"[startup] resume_offers failed: {e!r}")
 
 
 @app.get("/health")
