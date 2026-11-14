@@ -22,6 +22,11 @@ OFFER_TIMEOUT_SECONDS = float(os.getenv("OFFER_TIMEOUT_SECONDS", "60"))
 
 YES = re.compile(r"^\s*(y|ya|yes|yep|yeah|sure|ok|okay|on it|accept)\b", re.I)
 NO = re.compile(r"^\s*(n|no|nope|nah|can'?t|cannot|pass|decline)\b", re.I)
+NEW_JOB = re.compile(r"^\s*new job\b", re.I)  # escape hatch: always open a fresh job
+
+# A customer's text joins their open job instead of starting a second one.
+OPEN_STATUSES = {"new", "triaged", "offered", "accepted", "booked"}
+JOB_WINDOW_HOURS = float(os.getenv("JOB_WINDOW_HOURS", "12"))
 
 _timers: dict[str, threading.Timer] = {}
 # One inbound event at a time, so a YES and a timeout can't both fire offer_next.
@@ -53,6 +58,8 @@ def handle_inbound(phone: str, text: str, photo_url: str | None = None) -> None:
             tech = db.get_tech_by_phone(phone)
             if tech:
                 handle_tech_reply(tech.id, text)
+            elif not NEW_JOB.match(text) and (job := _open_job_for(phone)):
+                handle_customer_followup(job, text, photo_url)
             else:
                 handle_customer(phone, text, photo_url)
     except Exception as e:  # surface on the dashboard instead of dying in a background task
@@ -62,24 +69,72 @@ def handle_inbound(phone: str, text: str, photo_url: str | None = None) -> None:
 
 # ---------- customer flow ----------
 
+def _open_job_for(phone: str) -> Job | None:
+    """The customer's newest job that is still in progress and recent, else None."""
+    cutoff = datetime.now(timezone.utc).timestamp() - JOB_WINDOW_HOURS * 3600
+    for row in reversed(db.store.select("jobs", customer_phone=phone)):  # newest first
+        created = row.get("created_at")
+        if row["status"] in OPEN_STATUSES and created and datetime.fromisoformat(created).timestamp() > cutoff:
+            return Job(**row)
+    return None
+
+
 def handle_customer(phone: str, text: str, photo_url: str | None) -> Job:
     job = Job(customer_phone=phone, photo_url=photo_url, raw_text=text)
     db.insert_job(job)
     db.log_event(job.id, "messaging", f"new text from {phone}: {text!r}" + (" + photo" if photo_url else ""))
+    _triage(job)
+    return job
 
-    triaged = intake(photo_url, text, customer_phone=phone, job_id=job.id)
+
+def _triage(job: Job) -> None:
+    """Run the agents on everything the customer has said so far. If intake needs more
+    information it asks a follow-up and the job stays `new`; the answer comes back
+    through handle_customer_followup, which calls this again."""
+    triaged = intake(job.photo_url, job.raw_text, customer_phone=job.customer_phone, job_id=job.id)
     if triaged.follow_up_question:
-        send_text(phone, triaged.follow_up_question, job_id=job.id)
-        return job  # TODO(A): attach the customer's answer to this job
+        send_text(job.customer_phone, triaged.follow_up_question, job_id=job.id)
+        return
 
     parts = find_parts(triaged)
     q = quote(triaged, parts)
     db.update_job_fields(job.id, trade=triaged.trade, issue=triaged.issue, urgency=triaged.urgency,
                          parts=parts, location=triaged.location or _demo_location(), quote=q)
     advance(job.id, JobStatus.triaged)
-    send_text(phone, "Got it, finding a plumber for you now.", job_id=job.id)
+    send_text(job.customer_phone, "Got it, finding a plumber for you now.", job_id=job.id)
     offer_next(job.id)
-    return job
+
+
+def handle_customer_followup(job: Job, text: str, photo_url: str | None) -> None:
+    """A second text from a customer with an open job: add it to that job, never start another."""
+    fields: dict = {"raw_text": "\n".join(t for t in (job.raw_text, text) if t)}
+    if photo_url and not job.photo_url:
+        fields["photo_url"] = photo_url
+    db.update_job_fields(job.id, **fields)
+    db.log_event(job.id, "messaging", f"customer follow-up added to this job: {text!r}"
+                 + (" + photo" if photo_url else ""))
+    job = db.get_job(job.id)
+
+    update = f'Update from the customer: "{text}"' if text else "The customer sent another photo."
+    if photo_url:
+        update += f"\nPhoto: {photo_url}"
+
+    if job.status == JobStatus.new:
+        # Waiting on an answer to intake's follow-up question: triage again with everything so far.
+        _triage(job)
+    elif job.status in (JobStatus.triaged, JobStatus.offered):
+        pending = [o for o in db.list_offers(job.id) if o.response is None]
+        if pending and (tech := db.get_tech(pending[-1].tech_id)):
+            send_text(tech.phone, update, job_id=job.id)
+        send_text(job.customer_phone, "Thanks, I added that to your request. Still finding a plumber.",
+                  job_id=job.id)
+    else:  # accepted / booked: the assigned tech owns it now
+        tech = db.get_tech(job.assigned_tech_id) if job.assigned_tech_id else None
+        if tech:
+            send_text(tech.phone, update, job_id=job.id)
+            send_text(job.customer_phone, f"Thanks, I passed that on to {_first(tech.name)}.", job_id=job.id)
+        else:
+            send_text(job.customer_phone, "Thanks, I added that to your request.", job_id=job.id)
 
 
 def _start_timer(offer_id: str, job_id: str) -> None:
