@@ -33,6 +33,51 @@ def _job_card(j: dict, names: dict) -> dict:
             "tech": names.get(j.get("assigned_tech_id"))}
 
 
+def _needs(jobs: list[dict], offers: list[dict], now: datetime) -> dict[str, str]:
+    """job id -> what the owner should do about it."""
+    day_ago = now - timedelta(hours=24)
+    out = {}
+    for j in jobs:
+        created = _ts(j.get("created_at")) or now
+        if j["status"] == "failed" and created >= day_ago:
+            out[j["id"]] = "No tech took it. Call the customer."
+        elif j["status"] == "new" and now - created > timedelta(minutes=5):
+            out[j["id"]] = "Waiting on the customer's answer for over 5 min."
+        elif j["status"] == "offered":
+            pending = [o for o in offers if o["job_id"] == j["id"] and not o.get("response")]
+            if pending and now - _ts(pending[-1]["sent_at"]) > timedelta(seconds=OFFER_TIMEOUT * 3):
+                out[j["id"]] = "Offer has gone unanswered for a while."
+        elif j["status"] == "accepted" and now - created > timedelta(hours=2):
+            out[j["id"]] = "Taken, but no time set with the customer yet."
+    return out
+
+
+@router.get("/board")
+def board():
+    """Jobs grouped into the overview's columns. Dropped only shows the last 24 hours."""
+    now = datetime.now(timezone.utc)
+    day_ago = now - timedelta(hours=24)
+    jobs = db.store.select("jobs")
+    offers = db.store.select("offers")
+    names = {t.id: t.name for t in db.list_techs()}
+    needs = _needs(jobs, offers, now)
+    cols: dict[str, list] = {"waiting": [], "offered": [], "taken": [], "dropped": []}
+    for j in reversed(jobs):  # newest first
+        card = {**_job_card(j, names), "needs": needs.get(j["id"])}
+        s = j["status"]
+        if s in ("new", "triaged"):
+            cols["waiting"].append(card)
+        elif s == "offered":
+            pending = [o for o in offers if o["job_id"] == j["id"] and not o.get("response")]
+            card["offered_to"] = names.get(pending[-1]["tech_id"]) if pending else None
+            cols["offered"].append(card)
+        elif s in WORKING:
+            cols["taken"].append(card)
+        elif s == "failed" and (_ts(j.get("created_at")) or now) >= day_ago:
+            cols["dropped"].append(card)
+    return cols
+
+
 @router.get("/summary")
 def summary():
     now = datetime.now(timezone.utc)
@@ -45,20 +90,8 @@ def summary():
     responded = [o for o in offers if o.get("response")]
     yes = sum(o["response"] == "yes" for o in responded)
     working = [j for j in jobs if j["status"] in WORKING and j.get("quote")]
-
-    needs_you = []
-    for j in jobs:
-        created = _ts(j.get("created_at")) or now
-        if j["status"] == "failed" and created >= day_ago:
-            needs_you.append({**_job_card(j, names), "reason": "No tech took it. Call the customer."})
-        elif j["status"] == "new" and now - created > timedelta(minutes=5):
-            needs_you.append({**_job_card(j, names), "reason": "Waiting on the customer's answer for over 5 min."})
-        elif j["status"] == "offered":
-            pending = [o for o in offers if o["job_id"] == j["id"] and not o.get("response")]
-            if pending and now - _ts(pending[-1]["sent_at"]) > timedelta(seconds=OFFER_TIMEOUT * 3):
-                needs_you.append({**_job_card(j, names), "reason": "Offer has gone unanswered for a while."})
-        elif j["status"] == "accepted" and now - created > timedelta(hours=2):
-            needs_you.append({**_job_card(j, names), "reason": "Accepted but no time set yet."})
+    needs = _needs(jobs, offers, now)
+    needs_you = [{**_job_card(j, names), "reason": needs[j["id"]]} for j in jobs if j["id"] in needs]
 
     return {
         "open": sum(j["status"] in OPEN for j in jobs),
