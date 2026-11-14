@@ -69,6 +69,57 @@ def send(phone: str, text: str) -> None:
     r.raise_for_status()
 
 
+def upload_attachment(data: bytes, content_type: str, filename: str = "photo.jpg") -> str:
+    """POST /attachments: a two-part multipart/related body (JSON metadata, then the bytes).
+    Returns the new attachment id (pho_att_...). Uploading sends nothing to anyone."""
+    import json
+    boundary = f"electron-{uuid4().hex}"
+    meta = json.dumps({"contentType": content_type, "sizeBytes": len(data), "filename": filename}).encode()
+    body = (f"--{boundary}\r\nContent-Type: application/json\r\n\r\n".encode() + meta
+            + f"\r\n--{boundary}\r\nContent-Type: {content_type}\r\n\r\n".encode() + data
+            + f"\r\n--{boundary}--\r\n".encode())
+    r = httpx.post(
+        f"{API}/projects/{_cfg()[1]}/attachments",
+        headers={**_headers(), "idempotency-key": str(uuid4()),
+                 "content-type": f"multipart/related; boundary={boundary}"},  # Photon rejects a type= param
+        content=body, timeout=30,
+    )
+    r.raise_for_status()
+    return r.json()["id"]
+
+
+def send_attachment(phone: str, attachment_id: str) -> None:
+    c = get_contact(phone)
+    if not c:
+        raise RuntimeError(f"{phone} hasn't texted the line yet (no Photon space)")
+    r = httpx.post(
+        f"{API}/projects/{_cfg()[1]}/messages",
+        headers={**_headers(), "idempotency-key": str(uuid4())},
+        json={"spaceId": c["space_id"], "senderId": c["line_user_id"],
+              "content": {"type": "attachment", "attachmentId": attachment_id}},
+        timeout=10,
+    )
+    r.raise_for_status()
+
+
+def _photo_bytes(photo_url: str) -> tuple[bytes, str]:
+    """Photos that came in through Photon are re-read with our key (no tunnel round trip)."""
+    marker = "/photos/"
+    if marker in photo_url and photo_url.split(marker, 1)[1].startswith("pho_att_"):
+        r = fetch_attachment(photo_url.split(marker, 1)[1].split("?")[0])
+    else:
+        r = httpx.get(photo_url, timeout=15, follow_redirects=True)
+        r.raise_for_status()
+    return r.content, r.headers.get("content-type", "image/jpeg").split(";")[0]
+
+
+def send_photo(phone: str, photo_url: str) -> None:
+    """Send the actual image (not a link). Raises on failure; send.py falls back to a link."""
+    data, content_type = _photo_bytes(photo_url)
+    ext = {"image/png": "png", "image/heic": "heic", "image/gif": "gif"}.get(content_type, "jpg")
+    send_attachment(phone, upload_attachment(data, content_type, f"photo.{ext}"))
+
+
 _lines: dict = {"at": 0.0, "map": {}}
 
 

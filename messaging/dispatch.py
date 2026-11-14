@@ -119,8 +119,6 @@ def handle_customer_followup(job: Job, text: str, photo_url: str | None) -> None
     job = db.get_job(job.id)
 
     update = f'Update from the customer: "{text}"' if text else "The customer sent another photo."
-    if photo_url:
-        update += f"\nPhoto: {photo_url}"
 
     if job.status == JobStatus.new:
         # Waiting on an answer to intake's follow-up question: triage again with everything so far.
@@ -128,13 +126,13 @@ def handle_customer_followup(job: Job, text: str, photo_url: str | None) -> None
     elif job.status in (JobStatus.triaged, JobStatus.offered):
         pending = [o for o in db.list_offers(job.id) if o.response is None]
         if pending and (tech := db.get_tech(pending[-1].tech_id)):
-            send_text(tech.phone, update, job_id=job.id)
+            send_text(tech.phone, update, job_id=job.id, photo_url=photo_url)
         send_text(job.customer_phone, "Thanks, I added that to your request. Still finding a plumber.",
                   job_id=job.id)
     else:  # accepted / booked: the assigned tech owns it now
         tech = db.get_tech(job.assigned_tech_id) if job.assigned_tech_id else None
         if tech:
-            send_text(tech.phone, update, job_id=job.id)
+            send_text(tech.phone, update, job_id=job.id, photo_url=photo_url)
             send_text(job.customer_phone, f"Thanks, I passed that on to {_first(tech.name)}.", job_id=job.id)
         else:
             send_text(job.customer_phone, "Thanks, I added that to your request.", job_id=job.id)
@@ -155,8 +153,6 @@ def _offer_text(job: Job, reasons: list[str]) -> str:
         head = "New job: we don't know what the problem is yet"
     parts = "; ".join(f"{p.name} (likely, {p.confidence:.0%})" for p in job.parts) or "unknown"
     lines = [head, f'Customer said: "{job.raw_text}"']
-    if job.photo_url:
-        lines.append(f"Photo: {job.photo_url}")
     lines += [f"Parts: {parts}", f"Quote: {_quote_text(job)}",
               f"Why you: {', '.join(reasons)}", "Reply YES or NO."]
     return "\n".join(lines)
