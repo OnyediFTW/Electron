@@ -19,7 +19,8 @@ from shared.schema import Job, Offer, Tech
 
 load_dotenv()
 
-TABLES = ("techs", "jobs", "offers", "events")
+TABLES = ("techs", "jobs", "offers", "events", "contacts", "messages")  # contacts, messages: owned by A
+_TIMESTAMPED = ("events", "jobs", "messages")
 
 
 def _now() -> str:
@@ -36,7 +37,7 @@ class _MemoryStore:
     def insert(self, table: str, row: dict) -> dict:
         with self.lock:
             row = {"id": str(uuid4()), **row}
-            if table in ("events", "jobs"):
+            if table in _TIMESTAMPED:
                 row.setdefault("created_at", _now())
             self.rows[table].append(row)
             return dict(row)
@@ -75,7 +76,7 @@ class _SupabaseStore:
         q = self.client.table(table).select("*")
         for k, v in eq.items():
             q = q.eq(k, v)
-        if table in ("events", "jobs"):
+        if table in _TIMESTAMPED:
             q = q.order("created_at")
         return q.execute().data
 
@@ -119,6 +120,26 @@ def log_event(job_id: Optional[str], agent: str, message: str) -> None:
 
 def list_events(job_id: Optional[str] = None) -> list[dict]:
     return store.select("events", job_id=job_id) if job_id else store.select("events")
+
+
+# ---------- messages: every text in or out, for the live /phones view (A) ----------
+
+def log_message(phone: str, direction: str, text: str, *,
+                photo_url: Optional[str] = None, job_id: Optional[str] = None) -> None:
+    """direction: "in" (person -> Electron) or "out" (Electron -> person). Never raises."""
+    try:
+        store.insert("messages", {"phone": phone, "direction": direction, "text": text,
+                                  "photo_url": photo_url, "job_id": job_id})
+    except Exception as e:
+        print(f"[db] log_message failed: {e}")
+
+
+def list_messages(since: Optional[str] = None) -> list[dict]:
+    rows = store.select("messages")
+    if since:
+        cutoff = datetime.fromisoformat(since)
+        rows = [r for r in rows if datetime.fromisoformat(r["created_at"]) > cutoff]
+    return rows
 
 
 # ---------- jobs ----------
