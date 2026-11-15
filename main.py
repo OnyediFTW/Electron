@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from dashboard.api import router as owner_router
 from messaging import photon
@@ -19,6 +20,8 @@ app = FastAPI(title="Electron")
 app.include_router(messaging_router)
 app.include_router(owner_router)
 app.include_router(jobcard_router)
+# Static images for the /phones landing (the sample photo: Tony Webster, CC BY 2.0)
+app.mount("/assets", StaticFiles(directory=Path(__file__).parent / "dashboard" / "assets"), name="assets")
 
 if db.BACKEND == "memory":
     seed()  # FALLBACK store starts empty every run
@@ -80,8 +83,8 @@ def api_threads(since: str | None = None):
                               "photo_url": m.get("photo_url"), "created_at": m["created_at"]}
                              for m in msgs if m["phone"] == phone]}
 
-    # The nearer plumber phone = whoever got the first offer this session (the ranking decides);
-    # before any offer, keep the .env order. Both are labeled Plumber: neither is a fixed backup.
+    # The nearer technician phone = whoever got the first offer this session (the ranking decides);
+    # before any offer, keep the .env order. Both are labeled Technician: neither is a fixed backup.
     first_out = {}
     for m in msgs:
         if m["direction"] == "out" and m["phone"] in tech_phones:
@@ -91,7 +94,7 @@ def api_threads(since: str | None = None):
     phones = [{**thread("customer", "Customer · you", customer), "key": "customer"}]
     for i, p in enumerate(ordered):
         first = names.get(p, "tech").split()[0]
-        role, label = ("tech" if i == 0 else "backup"), f"Plumber · {first}"  # equals; the board ranks them
+        role, label = ("tech" if i == 0 else "backup"), f"Technician · {first}"  # equals; the board ranks them
         phones.append({**thread(role, label, p), "key": first})
     return {"server_time": now, "phones": phones, "photo_labels": _photo_labels()}
 
@@ -114,7 +117,7 @@ _RANK_LINE = re.compile(r"^\d+\.\s+(.+?)\s{2,}([\d.]+)\s{2,}\((.*)\)$")
 
 @app.get("/api/ranking")
 def api_ranking(after: str | None = None):
-    """The newest job's matching for the ranking board on /phones: each scored plumber, the points
+    """The newest job's matching for the ranking board on /phones: each scored technician, the points
     each factor gave them (recomputed from rank_techs' reasons with its own weights), and what
     happened to their offer. Names only, no phone numbers: the tunnel makes this public."""
     from matching.rank import (FAIR_SHARE_STEP, GENERALIST_COVERS, GENERALIST_SKILL, HORIZON_HOURS, MAX_MILES,
@@ -157,7 +160,7 @@ def api_ranking(after: str | None = None):
         d, stars = num(r"([\d.]+) mi away", reasons), num(r"([\d.]+) stars", reasons)
         hrs, n_open = num(r"free in (\d+)h", reasons), num(r"(\d+) jobs? today", reasons)
         points = {
-            "skill": w["skill"] * (GENERALIST_SKILL if "general plumber" in reasons else 1),
+            "skill": w["skill"] * (GENERALIST_SKILL if "generalist" in reasons else 1),
             "distance": w["distance"] * max(0.0, 1 - d / MAX_MILES) if d is not None else 0.0,
             "free": w["free"] * max(0.0, 1 - hrs / HORIZON_HOURS) if hrs is not None else 0.0,
             "rating": w["rating"] * (stars or 0) / 5,
@@ -181,7 +184,7 @@ def api_ranking(after: str | None = None):
             "name": name, "score": score, "state": state, "skills": t.skills if t else [],
             "points": {k: round(v, 1) for k, v in points.items()},
             "facts": {"miles": d, "stars": stars, "free_in_h": hrs, "jobs_today": n_open,
-                      "generalist": "general plumber" in reasons},
+                      "generalist": "generalist" in reasons},
         })
     # Techs the ranker left out (no skill for this trade), so the board answers "where is X?"
     ranked_names = {t["name"] for t in techs}

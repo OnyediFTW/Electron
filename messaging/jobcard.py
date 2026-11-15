@@ -22,7 +22,7 @@ router = APIRouter()
 
 URGENCY = {"high": ("Urgent", "#E4572E"), "medium": ("Soon", "#F2C14E"), "low": ("Whenever", "#8CC7A1")}
 DONE = {"accepted": "You've got the job. The customer's number is below.",
-        "passed": "Passed. We've offered it to the next plumber."}
+        "passed": "Passed. We've offered it to the next technician."}
 
 
 def _e(s) -> str:
@@ -47,7 +47,7 @@ def job_card(offer_id: str, done: str | None = None):
     response = offer.get("response")
     mine = response == "yes"
     status = (DONE.get(done) or {"yes": "You accepted this job.", "no": "You passed on this job.",
-                                 "timeout": "This offer timed out and went to the next plumber."}.get(response, ""))
+                                 "timeout": "This offer timed out and went to the next technician."}.get(response, ""))
     open_now = response is None and job.status.value == "offered"
 
     parts = "".join(

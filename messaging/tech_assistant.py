@@ -18,7 +18,7 @@ from matching.rank import miles
 from shared.db import log_event
 from shared.schema import Job
 
-PROMPT = """You are Electron, a dispatcher texting a plumber about one job. Reply to the plumber's
+PROMPT = """You are Electron, a dispatcher texting a technician about one job. Reply to the technician's
 message below using only the facts (and the photo, if attached). Rules:
 - At most 2 short sentences, under 40 words. Plain text, no Markdown, no greetings or sign-offs.
 - Reply to what they actually said. Do not repeat the job summary.
@@ -32,7 +32,7 @@ Never invent an address, time, price, part size or phone number. {closing}
 FACTS
 {facts}
 
-PLUMBER'S MESSAGE: "{question}\""""
+TECHNICIAN'S MESSAGE: "{question}\""""
 
 
 def maps_link(job: Job) -> Optional[str]:
@@ -66,7 +66,7 @@ def _facts(job: Job, tech, share_contact: bool) -> str:
         if job.prep.get("watch_out"):
             lines.append(f"Watch out: {' '.join(job.prep['watch_out'])}")
     if job.location:
-        lines.append(f"Distance from the plumber: {miles((job.location.lat, job.location.lng), (tech.lat, tech.lng)):.1f} mi")
+        lines.append(f"Distance from the technician: {miles((job.location.lat, job.location.lng), (tech.lat, tech.lng)):.1f} mi")
         lines.append(f"Directions link (approximate customer location, no street address yet): {maps_link(job)}")
     lines.append("Arrival time: booked; see the booking text" if job.status.value == "booked"
                  else "Arrival time: not booked yet (the customer must OK the estimate first)")

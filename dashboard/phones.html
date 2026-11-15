@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Electron Live Phones</title>
+<title>Electron · Text a photo, get a technician</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -18,13 +18,21 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
-  body {
+  body { background: #3F454C; font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--ink); overflow: hidden; }
+  /* The room: a pegboard wall lit from above, darker at the edges, drifting slightly as you scroll */
+  .room { position: fixed; inset: -80px 0; pointer-events: none;
     background-color: var(--board);
-    background-image: radial-gradient(circle at center, var(--hole) 0 3px, transparent 3.6px);
-    background-size: 32px 32px; background-position: 16px 16px;
-    font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--ink); overflow: hidden;
-  }
-  #stage { position: absolute; left: 50%; top: 50%; width: 1960px; height: 1040px; transform-origin: center center; }
+    background-image: radial-gradient(circle at center, #23272B 0 2.6px, rgba(255,255,255,.08) 3.1px, transparent 3.7px);
+    background-size: 32px 32px; background-position: 16px 16px; will-change: transform; }
+  .room::after { content: ""; position: absolute; inset: 0;
+    background: radial-gradient(ellipse 70% 55% at 50% 8%, rgba(255,246,225,.16), transparent 70%),
+                radial-gradient(ellipse at center, transparent 50%, rgba(10,12,14,.55) 100%); }
+  #scroller { position: relative; height: 100vh; overflow-y: auto; scroll-snap-type: y mandatory; scrollbar-width: none; }
+  #scroller::-webkit-scrollbar { display: none; }
+  .panel { position: relative; height: 100vh; scroll-snap-align: start; scroll-snap-stop: always; overflow: hidden; perspective: 2000px; }
+  #stage { position: absolute; left: 50%; top: 50%; width: 1960px; height: 1040px; transform-origin: center center;
+    transform-style: preserve-3d; will-change: transform, opacity; }
+  #stage > *, #phones, #phones > * { transform-style: preserve-3d; }
   .abs { position: absolute; }
 
   h1 { margin: 0; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 72px; line-height: 1; letter-spacing: .01em; text-transform: uppercase; white-space: nowrap; }
@@ -49,7 +57,10 @@
   .thread, .rows { scrollbar-width: thin; scrollbar-color: #C9CDD2 transparent; }
   .btn:hover { filter: brightness(1.12); }
 
-  .phone { width: 300px; height: 640px; padding: 11px; background: var(--bezel); border-radius: 46px; box-shadow: 0 30px 50px rgba(0,0,0,.45), inset 0 0 0 2px #2B2F34; }
+  .phone { width: 300px; height: 640px; padding: 11px; border-radius: 46px;
+    background: linear-gradient(115deg, #2A2F35 0%, #121417 38%, #0C0E10 70%, #23272C 100%);
+    box-shadow: inset 0 0 0 1.5px #3A4047, inset 0 2px 0 rgba(255,255,255,.08),
+                0 4px 8px rgba(0,0,0,.35), 0 40px 70px -10px rgba(0,0,0,.6); }
   .screen { width: 100%; height: 100%; background: var(--screen); border-radius: 36px; overflow: hidden; display: flex; flex-direction: column; color: var(--text); }
   .head { padding: 24px 16px 12px; border-bottom: 1px solid #ECEDEF; display: flex; flex-direction: column; align-items: center; gap: 4px; }
   .avatar { width: 40px; height: 40px; border-radius: 50%; background: #1E2328; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 16px; }
@@ -72,9 +83,13 @@
     .thread { scroll-behavior: auto; }
   }
 
-  /* Ranking board: how the algorithm picked the plumber, factor by factor */
+  /* Ranking board: how the algorithm picked the technician, factor by factor */
   #board { left: 600px; top: 214px; width: 340px; }
-  .card { position: absolute; left: 0; top: 56px; width: 340px; height: 640px; background: #FBFBF9; color: var(--text); border-radius: 14px; box-shadow: 0 30px 50px rgba(0,0,0,.45), inset 0 0 0 1px #E3E5E8; display: flex; flex-direction: column; overflow: hidden; }
+  .card { position: absolute; left: 0; top: 56px; width: 340px; height: 640px; background: #FBFBF9; color: var(--text); border-radius: 14px;
+    box-shadow: inset 0 0 0 1px #E3E5E8, 0 4px 8px rgba(0,0,0,.3), 0 44px 80px -12px rgba(0,0,0,.6); display: flex; flex-direction: column; overflow: hidden; }
+  #board { transform: translateZ(80px); }
+  .pipe { transform: translateZ(-30px); }
+  .thread, .rows { overscroll-behavior: contain; }
   .card .top { padding: 18px 18px 12px; border-bottom: 1px solid #E8EAED; }
   .job { font-size: 17px; font-weight: 600; line-height: 1.3; }
   .boost { margin-top: 6px; font-size: 13px; color: #A0532B; font-weight: 500; min-height: 16px; }
@@ -117,6 +132,59 @@
   .skills span { font-size: 12px; color: #3D434A; background: #ECEEF1; border-radius: 3px; padding: 1px 6px; }
   .skills span.match { background: var(--tape); color: #fff; font-weight: 600; }
 
+  /* ---------- landing ---------- */
+  .landing { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr);
+    align-items: center; gap: clamp(24px, 4vw, 72px); padding: clamp(72px, 9vh, 120px) clamp(20px, 6vw, 112px) clamp(56px, 8vh, 96px);
+    transform-origin: 50% 30%; will-change: transform, opacity; }
+  .wordmark { position: absolute; left: clamp(20px, 6vw, 112px); top: clamp(22px, 4vh, 40px); font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 700; font-size: 26px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink); }
+  .pitch h1 { margin: 0; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; text-transform: uppercase;
+    font-size: clamp(56px, 8.4vw, 152px); line-height: .9; letter-spacing: -.005em; text-wrap: balance; }
+  .pitch h1 span { color: var(--accent); }
+  .lede { margin: clamp(18px, 2.4vh, 28px) 0 0; max-width: 34em; font-size: clamp(17px, 1.35vw, 21px); line-height: 1.5; color: var(--ink-2); }
+  .cta { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin-top: clamp(22px, 3vh, 34px); padding: 14px 20px 13px;
+    background: var(--accent); color: var(--accent-ink); text-decoration: none; border-radius: 4px;
+    box-shadow: 0 2px 0 rgba(0,0,0,.18), 0 18px 34px -12px rgba(0,0,0,.6); transition: transform .3s cubic-bezier(.16,1,.3,1), box-shadow .3s; }
+  .cta:hover { transform: translateY(-2px); box-shadow: 0 2px 0 rgba(0,0,0,.18), 0 24px 40px -12px rgba(0,0,0,.65); }
+  .cta:focus-visible, .cue:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+  .cta small { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+  .cta strong { white-space: nowrap; font-family: 'IBM Plex Mono', monospace; font-size: clamp(22px, 2vw, 30px); font-weight: 600; letter-spacing: .01em; }
+  .how { list-style: none; margin: clamp(26px, 4vh, 44px) 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 32px; max-width: 46em; counter-reset: step; }
+  .how li { counter-increment: step; display: grid; grid-template-columns: 30px 1fr; gap: 10px; font-size: 16px; line-height: 1.45; color: var(--ink-2); }
+  .how li::before { content: counter(step); font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 13px; color: var(--accent-ink);
+    background: var(--ink); border-radius: 3px; height: 24px; display: grid; place-items: center; margin-top: 1px; }
+  .how b { color: var(--ink); font-weight: 600; }
+
+  /* The hero phone: a real object in space, with a back plate for thickness and a contact shadow */
+  .hero { position: relative; justify-self: center; perspective: 1400px; }
+  .hero-phone { position: relative; width: 300px; height: 620px; transform-style: preserve-3d; will-change: transform;
+    transform: rotateY(-24deg) rotateX(9deg) rotateZ(2deg); }
+  .hero-phone::before { content: ""; position: absolute; inset: 0; border-radius: 46px; background: #07080A; transform: translateZ(-16px); }
+  .hero-phone .phone { position: absolute; inset: 0; width: auto; height: auto; }
+  .hero-floor { position: absolute; left: 50%; bottom: -46px; width: 300px; height: 46px; transform: translateX(-46%);
+    background: radial-gradient(ellipse at center, rgba(0,0,0,.55), transparent 70%); filter: blur(6px); }
+  .hero .thread { gap: 7px; }
+  .hero .shot .tag { display: block; }
+  .credit { position: absolute; left: 0; right: 0; bottom: -86px; text-align: center; font-size: 12px; color: #B9BEC4; }
+  .credit a { color: inherit; }
+
+  .cue { position: absolute; left: 50%; bottom: clamp(16px, 3.5vh, 34px); transform: translateX(-50%); display: inline-flex; align-items: center; gap: 10px;
+    background: none; border: 0; padding: 8px 12px; cursor: pointer; color: var(--ink); font-family: 'IBM Plex Mono', monospace;
+    font-size: 14px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; }
+  .cue svg { width: 18px; height: 18px; animation: nudge-down 2.4s cubic-bezier(.16,1,.3,1) infinite; }
+  @keyframes nudge-down { 0%, 60%, 100% { transform: none; } 30% { transform: translateY(5px); } }
+
+  /* ---------- dashboard header ---------- */
+  .dash-title { margin: 0; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 76px; line-height: 1; letter-spacing: .01em; text-transform: uppercase; }
+  .dash-status { margin-top: 10px; font-family: 'IBM Plex Mono', monospace; font-size: 15px; color: var(--ink-2); display: flex; gap: 28px; }
+
+  @media (max-width: 960px) {
+    .landing { grid-template-columns: 1fr; align-content: center; overflow-y: auto; }
+    .hero { display: none; }
+    .how { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) { .cue svg { animation: none; } .cta { transition: none; } }
+
   .foot { font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: var(--ink-2); }
   .live { display: inline-flex; align-items: center; gap: 8px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: #7BD88F; box-shadow: 0 0 0 3px rgba(123,216,143,.25); }
@@ -124,15 +192,59 @@
 </style>
 </head>
 <body>
-<div id="stage">
+<div class="room" id="room" aria-hidden="true"></div>
+<main id="scroller">
 
-  <div class="abs" style="left: 96px; top: 64px; width: 1000px">
-    <h1>Text a photo. Get a plumber.</h1>
-    <p class="sub">Live: text <strong id="custLine">the Electron number</strong> from Messages on your Mac or your phone, and watch each phone fill in.</p>
+  <section class="panel" id="landing" aria-label="Electron">
+    <div class="wordmark">Electron</div>
+    <div class="landing" id="landing3d">
+      <div class="pitch">
+        <h1>Text a photo.<br><span>Get a technician.</span></h1>
+        <p class="lede">Electron is an AI dispatcher for small trade shops, run entirely over iMessage. Send a photo of the problem.
+          Electron reads it, picks the right technician, and books the visit. No app, no account, no phone tag.</p>
+        <a class="cta" id="cta" href="sms:+16289979661"><small>Text a photo to</small><strong id="custLine">+1 (628) 997-9661</strong></a>
+        <ol class="how">
+          <li><span><b>Text a photo</b> and one sentence about what's wrong.</span></li>
+          <li><span><b>Electron reads it,</b> texts back a safety tip, and scores every technician.</span></li>
+          <li><span><b>The best match</b> gets the job in iMessage and replies YES or NO.</span></li>
+          <li><span><b>You OK the estimate</b> and get a time booked on their calendar.</span></li>
+        </ol>
+      </div>
+      <div class="hero" aria-hidden="true">
+        <div class="hero-phone" id="heroPhone">
+          <div class="phone">
+            <div class="screen">
+              <div class="head"><div class="avatar">E</div><div class="name">Electron</div><div class="line">iMessage</div></div>
+              <div class="thread">
+                <figure class="shot"><img class="photo" src="/assets/ptrap.jpg" alt=""><figcaption class="tag">AI read: leaking P-trap · urgent</figcaption></figure>
+                <div class="b mine">My kitchen pipes are leaking</div>
+                <div class="b theirs">While you wait: close the shutoff valve under the sink.</div>
+                <div class="b theirs">Good news: Dana can take it. Estimate $59–$196. Reply OK to confirm.</div>
+                <div class="b mine">OK</div>
+                <div class="b theirs">You're booked: Dana arrives Sun 10:00 AM.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="hero-floor"></div>
+        <p class="credit">Photo: <a href="https://www.flickr.com/people/webster/" target="_blank" rel="noopener">Tony Webster</a>, CC BY 2.0</p>
+      </div>
+    </div>
+    <button class="cue" id="toDash" type="button">Dashboard
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+  </section>
+
+  <section class="panel" id="dashboard" aria-label="Dashboard">
+  <div id="stage">
+
+  <div class="abs" style="left: 96px; top: 60px; width: 1200px">
+    <h2 class="dash-title">Dashboard</h2>
+    <div class="dash-status"><span class="live"><span id="dot" class="dot"></span><span id="status">Connecting…</span></span></div>
   </div>
   <button id="reset" class="btn tape lg abs" style="right: 96px; top: 76px">Start over</button>
 
-  <!-- Customer <-> Electron (the ranking board) <-> each plumber. Plumbers are equals: the board decides. -->
+  <!-- Customer <-> Electron (the ranking board) <-> each technician. Technicians are equals: the board decides. -->
   <div id="pipeA" class="pipe abs" style="left: 400px; top: 430px; width: 220px" aria-hidden="true"></div>
   <div id="pipeB" class="pipe abs" style="left: 400px; top: 720px; width: 220px" aria-hidden="true"></div>
   <div id="pipeC" class="pipe abs" style="left: 940px; top: 430px; width: 180px" aria-hidden="true"></div>
@@ -149,19 +261,16 @@
         <div class="job" id="rankJob">Waiting for a job</div>
         <div class="boost" id="rankBoost"></div>
       </div>
-      <div class="rows" id="rankRows"><div class="empty">When a photo comes in, every plumber is scored here and the highest score gets the offer first.</div></div>
+      <div class="rows" id="rankRows"><div class="empty">When a photo comes in, every technician is scored here and the highest score gets the offer first.</div></div>
       <div class="legend">
         <div class="keys" id="rankKeys"></div>
-        The highest score gets the offer. If that plumber passes or doesn't answer in 60 s, it goes to the next one.
+        The highest score gets the offer. If that technician passes or doesn't answer in 60 s, it goes to the next one.
       </div>
     </div>
   </div>
-
-  <div class="foot abs" style="left: 96px; top: 960px; width: 1768px; display: flex; flex-wrap: wrap; gap: 8px 36px">
-    <span class="live"><span id="dot" class="dot"></span><span id="status">Connecting…</span></span>
-    <span>AI reads the photo, likely parts and price · The algorithm picks the plumber and spreads jobs evenly · Books a real calendar slot when you OK the estimate</span>
   </div>
-</div>
+  </section>
+</main>
 
 <template id="phoneTpl">
   <div class="abs" data-slot>
@@ -185,20 +294,60 @@
 <script>
 // Opened straight from disk (file://)? The data lives on the Electron server, so go there.
 if (location.protocol === "file:") location.replace("http://localhost:8000/phones");
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const LEFT = { customer: 120, tech: 1100, backup: 1480 };
 const EMPTY = {
   customer: "No messages yet. Text a photo of the problem to start a job.",
-  tech: "No messages yet. The offer goes to whichever plumber the board ranks highest.",
-  backup: "No messages yet. The offer goes to whichever plumber the board ranks highest.",
+  tech: "No messages yet. The offer goes to whichever technician the board ranks highest.",
+  backup: "No messages yet. The offer goes to whichever technician the board ranks highest.",
 };
 const stage = document.getElementById("stage");
 let since = null, slots = {}, seen = {};
 
-function fit() {
-  const s = Math.min(innerWidth / 1960, innerHeight / 1040);
-  stage.style.transform = `translate(-50%, -50%) scale(${s})`;
+// ---------- the camera: scroll moves from the landing into the dashboard, in depth ----------
+const scroller = document.getElementById("scroller"), landing3d = document.getElementById("landing3d");
+const room = document.getElementById("room"), heroPhone = document.getElementById("heroPhone");
+let scale = 1, progress = 0, mouse = { x: 0, y: 0 }, eased = { x: 0, y: 0 }, frame = 0;
+
+function fit() { scale = Math.min(innerWidth / 1960, innerHeight / 1040); scene(); }
+
+function scene() {
+  const p = progress, q = 1 - p, m = reduceMotion ? { x: 0, y: 0 } : eased;
+  // Landing recedes and tips away as you scroll; the dashboard rises from a tilt and settles facing you.
+  landing3d.style.transform = reduceMotion ? "" : `translateY(${-p * 90}px) translateZ(${-p * 650}px) rotateX(${p * 20}deg)`;
+  landing3d.style.opacity = String(Math.max(0, 1 - p * 1.35));
+  const tilt = reduceMotion ? 0 : q * 26;
+  stage.style.transform = `translate(-50%, -50%) scale(${scale}) translateY(${reduceMotion ? 0 : q * 140}px) ` +
+    `translateZ(${reduceMotion ? 0 : -q * 520}px) rotateX(${6 + tilt + m.y * 2.4}deg) rotateY(${m.x * 4}deg)`;
+  stage.style.opacity = String(Math.min(1, p * 1.4));
+  room.style.transform = `translateY(${-p * 60}px)`;
+  if (heroPhone) heroPhone.style.transform = `rotateY(${-24 + m.x * 6}deg) rotateX(${9 - m.y * 5}deg) rotateZ(2deg)`;
 }
-addEventListener("resize", fit); fit();
+
+function tick() {  // ease the mouse tilt so the scene drifts instead of snapping
+  eased.x += (mouse.x - eased.x) * 0.08; eased.y += (mouse.y - eased.y) * 0.08;
+  scene();
+  frame = Math.abs(mouse.x - eased.x) + Math.abs(mouse.y - eased.y) > 0.001 ? requestAnimationFrame(tick) : 0;
+}
+
+scroller.addEventListener("scroll", () => {
+  progress = Math.min(1, Math.max(0, scroller.scrollTop / innerHeight));
+  history.replaceState(null, "", progress > 0.5 ? "#dashboard" : location.pathname);
+  scene();
+}, { passive: true });
+// Any scroll down from the landing goes straight to the dashboard.
+scroller.addEventListener("wheel", e => {
+  if (progress < 0.5 && e.deltaY > 2) { e.preventDefault(); toDashboard(); }
+}, { passive: false });
+function toDashboard() { scroller.scrollTo({ top: innerHeight, behavior: reduceMotion ? "auto" : "smooth" }); }
+document.getElementById("toDash").addEventListener("click", toDashboard);
+if (!reduceMotion) addEventListener("mousemove", e => {
+  mouse = { x: e.clientX / innerWidth - 0.5, y: e.clientY / innerHeight - 0.5 };
+  if (!frame) frame = requestAnimationFrame(tick);
+});
+addEventListener("resize", fit);
+if (location.hash === "#dashboard") { scroller.scrollTop = innerHeight; progress = 1; }
+fit();
 
 const fmtLine = p => p ? p.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "+1 ($1) $2-$3") : "";
 const time = iso => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -213,13 +362,15 @@ function slotFor(p) {
   if (slots[p.role]) return slots[p.role];
   const node = document.getElementById("phoneTpl").content.firstElementChild.cloneNode(true);
   node.style.left = LEFT[p.role] + "px"; node.style.top = "214px";
+  node.style.transform = { customer: "rotateY(17deg) translateZ(30px)", tech: "rotateY(-11deg) translateZ(30px)",
+                           backup: "rotateY(-19deg) translateZ(10px)" }[p.role];
   node.querySelector("[data-compose]").placeholder =
     p.role === "customer" ? "Text from Messages on your Mac" : "Reply YES or NO from the phone";
   document.getElementById("phones").appendChild(node);
   return (slots[p.role] = node);
 }
 
-// A pulse runs through the pipe the message travels: customer -> Electron -> plumber, and back.
+// A pulse runs through the pipe the message travels: customer -> Electron -> technician, and back.
 function flow(id, rtl) {
   const pipe = document.getElementById(id);
   const pulse = el("span", rtl ? "flow rtl" : "flow");
@@ -240,14 +391,17 @@ function render(data) {
   for (const p of data.phones) {
     if (!(p.role in LEFT)) continue;
     const node = slotFor(p);
-    if (node.dataset.key !== p.key) {  // a different plumber moved into this spot: redraw it
+    if (node.dataset.key !== p.key) {  // a different technician moved into this spot: redraw it
       node.dataset.key = p.key;
       seen[p.role] = 0;
       node.querySelector("[data-thread]").replaceChildren();
     }
     node.querySelector("[data-label]").textContent = p.label;
     node.querySelector("[data-line]").textContent = fmtLine(p.line);
-    if (p.role === "customer" && p.line) document.getElementById("custLine").textContent = fmtLine(p.line);
+    if (p.role === "customer" && p.line) {  // the landing's number is the real line customers text
+      document.getElementById("custLine").textContent = fmtLine(p.line);
+      document.getElementById("cta").href = "sms:" + p.line;
+    }
 
     const thread = node.querySelector("[data-thread]");
     const msgs = p.messages, before = seen[p.role] || 0;
@@ -271,7 +425,7 @@ function render(data) {
       }
       if (m.text) { const b = el("div", "b " + (mine ? "mine" : "theirs")); b.innerHTML = md(m.text); thread.appendChild(b); }
       if (p.role === "customer") flow(mine ? "pipeA" : "pipeB", !mine);
-      else flow(p.role === "tech" ? "pipeC" : "pipeD", mine);  // to a plumber runs right, their reply runs back
+      else flow(p.role === "tech" ? "pipeC" : "pipeD", mine);  // to a technician runs right, their reply runs back
     }
     seen[p.role] = msgs.length;
     thread.scrollTop = thread.scrollHeight;
@@ -294,7 +448,7 @@ function skillTags(skills, trade) {
 
 function factsLine(f) {
   const out = [];
-  if (f.generalist) out.push("general plumber");
+  if (f.generalist) out.push("generalist");
   if (f.miles != null) out.push(`${f.miles} mi`);
   if (f.stars != null) out.push(`${f.stars}★`);
   out.push(f.free_in_h != null ? `free in ${f.free_in_h}h` : "no openings");
@@ -314,8 +468,8 @@ function renderRanking(r) {
     r.job && r.job.urgent_boost ? `Urgent: free time counts ×${r.job.urgent_boost}` : "";
   const rows = document.getElementById("rankRows");
   if (!r.techs.length) {
-    rows.replaceChildren(el("div", "empty", r.job ? "Scoring the plumbers…" :
-      "When a photo comes in, every plumber is scored here and the highest score gets the offer first."));
+    rows.replaceChildren(el("div", "empty", r.job ? "Scoring the technicians…" :
+      "When a photo comes in, every technician is scored here and the highest score gets the offer first."));
     return;
   }
   const max = Object.values(w).reduce((a, b) => a + b, 0) || 100;
@@ -355,9 +509,14 @@ function renderRanking(r) {
     return row;
   }));
   if (grow.length) requestAnimationFrame(() => requestAnimationFrame(() => grow.forEach(([seg, w]) => (seg.style.width = w))));
-  // Keep the plumber who holds the job in view, even when they rank below the fold
+  // Keep the technician who holds the job in view, even when they rank below the fold
+  // (scroll only the board's list: scrollIntoView would also move the page off the landing)
   const lead = rows.querySelector(".row.lead");
-  if (lead) lead.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  if (lead) {
+    const top = lead.offsetTop - rows.firstElementChild.offsetTop, bottom = top + lead.offsetHeight;
+    if (top < rows.scrollTop || bottom > rows.scrollTop + rows.clientHeight)
+      rows.scrollTo({ top: Math.max(0, bottom - rows.clientHeight + 8), behavior: reduceMotion ? "auto" : "smooth" });
+  }
 }
 
 async function pollRanking() {
