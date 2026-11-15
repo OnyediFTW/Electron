@@ -37,8 +37,6 @@
   .pipe { height: 24px; background: var(--cu); border-radius: 3px; transition: filter .5s ease, box-shadow .5s ease; }
   .ring { width: 16px; height: 32px; background: var(--cu-ring); border-radius: 3px; }
   .pipe.hot { filter: brightness(1.35) saturate(1.2); box-shadow: 0 0 18px 4px rgba(255,170,110,.55); }
-  #valveStem { transition: top .6s ease, height .6s ease; }
-  #valveWheel { transition: top .6s ease; }
 
   .btn { appearance: none; border: 0; cursor: pointer; }
   .btn:focus-visible { outline: 3px solid #FFD3B5; outline-offset: 3px; }
@@ -61,10 +59,10 @@
   .compose { padding: 8px 12px 16px; }
   .compose input { width: 100%; border: 1px solid #D5D8DD; border-radius: 18px; padding: 8px 14px; font: inherit; font-size: 12.5px; color: var(--text); background: #fff; }
   @keyframes pop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-  @media (prefers-reduced-motion: reduce) { .b, .photo { animation: none; } .pipe, #valveStem, #valveWheel { transition: none; } .thread { scroll-behavior: auto; } }
+  @media (prefers-reduced-motion: reduce) { .b, .photo { animation: none; } .pipe { transition: none; } .thread { scroll-behavior: auto; } }
 
   /* Ranking board: how the algorithm picked the plumber, factor by factor */
-  #board { left: 1540px; top: 214px; width: 340px; }
+  #board { left: 600px; top: 214px; width: 340px; }
   .card { position: absolute; left: 0; top: 56px; width: 340px; height: 640px; background: #FBFBF9; color: var(--text); border-radius: 14px; box-shadow: 0 30px 50px rgba(0,0,0,.45), inset 0 0 0 1px #E3E5E8; display: flex; flex-direction: column; overflow: hidden; }
   .card .top { padding: 18px 18px 12px; border-bottom: 1px solid #E8EAED; }
   .eyebrow { font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
@@ -108,25 +106,28 @@
   </div>
   <button id="reset" class="btn tape lg abs" style="right: 96px; top: 76px">Start over</button>
 
-  <div id="pipeA" class="pipe abs" style="left: 440px; top: 430px; width: 230px" aria-hidden="true"></div>
-  <div class="ring abs" style="left: 516px; top: 426px" aria-hidden="true"></div>
-  <div class="ring abs" style="left: 596px; top: 426px" aria-hidden="true"></div>
-  <div id="pipeB" class="pipe abs" style="left: 440px; top: 720px; width: 230px" aria-hidden="true"></div>
-  <div class="ring abs" style="left: 556px; top: 716px" aria-hidden="true"></div>
-  <div id="pipeC" class="pipe abs" style="left: 930px; top: 430px; width: 230px" aria-hidden="true"></div>
-  <div class="abs" aria-hidden="true" style="left: 1027px; top: 420px; width: 40px; height: 44px; border-radius: 6px; background: linear-gradient(180deg, #E9CF7E 0%, #C9A64B 40%, #9C7B2C 78%, #6F5419 100%)"></div>
-  <div id="valveStem" class="abs" aria-hidden="true" style="left: 1043px; top: 398px; width: 8px; height: 24px; background: linear-gradient(90deg, #8E9399 0%, #D3D6DA 50%, #7D8287 100%)"></div>
-  <div id="valveWheel" class="abs" aria-hidden="true" style="left: 1021px; top: 376px; width: 52px; height: 18px; border: 6px solid #C2362B; border-radius: 50%; box-shadow: 0 2px 0 #7E1F18"></div>
+  <!-- Customer <-> Electron (the ranking board) <-> each plumber. Plumbers are equals: the board decides. -->
+  <div id="pipeA" class="pipe abs" style="left: 400px; top: 430px; width: 220px" aria-hidden="true"></div>
+  <div class="ring abs" style="left: 486px; top: 426px" aria-hidden="true"></div>
+  <div class="ring abs" style="left: 552px; top: 426px" aria-hidden="true"></div>
+  <div id="pipeB" class="pipe abs" style="left: 400px; top: 720px; width: 220px" aria-hidden="true"></div>
+  <div class="ring abs" style="left: 520px; top: 716px" aria-hidden="true"></div>
+  <div id="pipeC" class="pipe abs" style="left: 940px; top: 430px; width: 180px" aria-hidden="true"></div>
+  <div class="ring abs" style="left: 1030px; top: 426px" aria-hidden="true"></div>
+  <div id="pipeD" class="pipe abs" style="left: 940px; top: 760px; width: 560px" aria-hidden="true"></div>
+  <div class="ring abs" style="left: 1006px; top: 756px" aria-hidden="true"></div>
+  <div class="ring abs" style="left: 1432px; top: 756px" aria-hidden="true"></div>
 
-  <div class="tape sm abs" style="left: 470px; top: 384px; transform: rotate(-1.5deg)">Offer →</div>
-  <div class="tape sm abs" style="left: 486px; top: 758px; transform: rotate(1deg)">← Answer</div>
-  <div id="valveTape" class="tape sm abs" style="left: 952px; top: 476px; width: 190px; line-height: 1.4; letter-spacing: .14em; transform: rotate(-1deg)">Opens only on NO or 60 s of silence</div>
+  <div class="tape sm abs" style="left: 446px; top: 384px; transform: rotate(-1.5deg)">Text →</div>
+  <div class="tape sm abs" style="left: 452px; top: 758px; transform: rotate(1deg)">← Reply</div>
+  <div class="tape sm abs" style="left: 968px; top: 384px; transform: rotate(1deg)">Offer →</div>
+  <div class="tape sm abs" style="left: 968px; top: 798px; transform: rotate(-1deg)">Offer →</div>
 
   <div id="phones"></div>
 
   <div id="board" class="abs">
     <div style="position: absolute; left: 0; top: 0; width: 340px; display: flex; justify-content: center">
-      <div class="tape lg" style="transform: rotate(0.6deg)">Who gets the job</div>
+      <div class="tape lg" style="transform: rotate(0.6deg); white-space: nowrap">Who gets the job</div>
     </div>
     <div class="card" aria-live="polite">
       <div class="top">
@@ -137,14 +138,14 @@
       <div class="rows" id="rankRows"><div class="empty">When a photo comes in, every plumber is scored here and the highest score gets the offer first.</div></div>
       <div class="legend">
         <div class="keys" id="rankKeys"></div>
-        Highest score is offered first. NO or 60 s of silence passes it down the list.
+        The highest score gets the offer. If that plumber passes or doesn't answer in 60 s, it goes to the next one.
       </div>
     </div>
   </div>
 
   <div class="foot abs" style="left: 96px; top: 960px; width: 1768px; display: flex; flex-wrap: wrap; gap: 8px 36px">
     <span class="live"><span id="dot" class="dot"></span><span id="status">Connecting…</span></span>
-    <span>AI reads the photo, likely parts and price · Books a real slot on the plumber’s calendar when you OK the estimate</span>
+    <span>AI reads the photo, likely parts and price · The algorithm picks the plumber and spreads jobs evenly · Books a real calendar slot when you OK the estimate</span>
   </div>
 </div>
 
@@ -170,12 +171,12 @@
 <script>
 // Opened straight from disk (file://)? The data lives on the Electron server, so go there.
 if (location.protocol === "file:") location.replace("http://localhost:8000/phones");
-const LEFT = { customer: 160, tech: 650, backup: 1140 };
+const LEFT = { customer: 120, tech: 1100, backup: 1480 };
 const TILT = { customer: -1, tech: 0.8, backup: -0.6 };
 const EMPTY = {
-  customer: "No messages yet. Send a text to start a job.",
-  tech: "No messages yet. Job offers land here first.",
-  backup: "No messages yet. Gets the offer only if the first tech passes.",
+  customer: "No messages yet. Text a photo of the problem to start a job.",
+  tech: "No messages yet. The offer goes to whichever plumber the board ranks highest.",
+  backup: "No messages yet. The offer goes to whichever plumber the board ranks highest.",
 };
 const stage = document.getElementById("stage");
 let since = null, slots = {}, seen = {};
@@ -212,12 +213,6 @@ function flash(id) {
   setTimeout(() => pipe.classList.remove("hot"), 1400);
 }
 
-function setValve(open) {
-  document.getElementById("valveStem").style.top = open ? "384px" : "398px";
-  document.getElementById("valveStem").style.height = open ? "38px" : "24px";
-  document.getElementById("valveWheel").style.top = open ? "362px" : "376px";
-  document.getElementById("valveTape").textContent = open ? "Open: passed to backup" : "Opens only on NO or 60 s of silence";
-}
 
 function render(data) {
   for (const p of data.phones) {
@@ -237,7 +232,6 @@ function render(data) {
     if (msgs.length === 0) {
       thread.replaceChildren(el("div", "empty", EMPTY[p.role]));
       seen[p.role] = 0;
-      if (p.role === "backup") setValve(false);
       continue;
     }
     if (msgs.length === before) continue;
@@ -248,18 +242,15 @@ function render(data) {
       const src = m.photo_url ? m.photo_url.replace(/^https?:\/\/[^/]+(?=\/photos\/)/, "") : null;
       if (src) thread.appendChild(Object.assign(document.createElement("img"), { className: "photo", src, alt: "Photo sent by the customer" }));
       if (m.text) { const b = el("div", "b " + (mine ? "mine" : "theirs")); b.innerHTML = md(m.text); thread.appendChild(b); }
-      if (p.role === "backup") flash("pipeC");
-      else if (p.role === "customer" && !mine) flash("pipeB");
-      else flash("pipeA");
+      flash(p.role === "tech" ? "pipeC" : p.role === "backup" ? "pipeD" : mine ? "pipeA" : "pipeB");
     }
     seen[p.role] = msgs.length;
     thread.scrollTop = thread.scrollHeight;
-    if (p.role === "backup") setValve(true);
   }
 }
 
 // ---------- ranking board ----------
-const FACTORS = [["skill", "Skill"], ["distance", "Distance"], ["free", "Free time"], ["rating", "Rating"], ["workload", "Workload"]];
+const FACTORS = [["skill", "Skill"], ["distance", "Distance"], ["free", "Free time"], ["rating", "Rating"], ["workload", "Fair share"]];
 const PILL = { "offered": ["offered", "Offered"], "took it": ["took", "Took it"], "booked": ["booked", "Booked"],
   "passed": ["passed", "Passed"], "no reply": ["noreply", "No reply"], "not on iMessage": ["skip", "Not on iMessage"], "in line": ["", "In line"] };
 let sessionStart = null, rankKey = "";
@@ -269,7 +260,7 @@ function factsLine(f) {
   if (f.miles != null) out.push(`${f.miles} mi`);
   if (f.stars != null) out.push(`${f.stars}★`);
   out.push(f.free_in_h != null ? `free in ${f.free_in_h}h` : "no openings");
-  if (f.open_jobs != null) out.push(`${f.open_jobs} open job${f.open_jobs === 1 ? "" : "s"}`);
+  if (f.jobs_today != null) out.push(`${f.jobs_today} job${f.jobs_today === 1 ? "" : "s"} today`);
   return out.join(" · ");
 }
 
@@ -301,7 +292,7 @@ function renderRanking(r) {
     bar.title = FACTORS.map(([k, n]) => `${n} ${t.points[k]}`).join(" + ");
     for (const [k] of FACTORS) {
       const seg = el("span", `f-${k}`);
-      seg.style.width = (100 * t.points[k] / max) + "%";
+      seg.style.width = (100 * Math.max(0, t.points[k]) / max) + "%";
       bar.appendChild(seg);
     }
     const facts = el("div", "facts");
@@ -338,7 +329,6 @@ document.getElementById("reset").addEventListener("click", async () => {
   // Clear the screens, and tell the server the next text is a new request (nothing is deleted).
   try { await fetch("/api/start-over", { method: "POST" }); } catch (e) {}
   since = null; seen = {}; sessionStart = null; rankKey = "";
-  setValve(false);
   await poll();
 });
 
