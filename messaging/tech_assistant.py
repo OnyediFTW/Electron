@@ -50,8 +50,11 @@ def _facts(job: Job, tech, accepted: bool) -> str:
         for c in job.prep.get("causes", []):
             lines.append(f"Likely cause ({c['likelihood']:.0%}): {c['cause']}; confirm by: {c['confirm']}")
         for p in job.prep.get("parts_plan", []):
-            lines.append(f"Recommended part: {p['pick']} for the {p['part']} (est. ${p['est_low']:.0f}-{p['est_high']:.0f}, "
-                         f"{p['buy']}; {p['why']}" + (f"; skip {p['avoid']}" if p.get("avoid") else "") + ")")
+            live = p.get("live")
+            price = (f"${live['price']:.2f} at {live['store']}, buy link {live['link']}" if live
+                     else f"est. ${p['est_low']:.0f}-{p['est_high']:.0f}, no live listing")
+            lines.append(f"Recommended part: {p['pick']} for the {p['part']} ({price}; {p['buy']}; {p['why']}"
+                         + (f"; skip {p['avoid']}" if p.get("avoid") else "") + ")")
         if job.prep.get("tools"):
             lines.append(f"Tools to bring: {', '.join(job.prep['tools'])}")
         if job.prep.get("watch_out"):
