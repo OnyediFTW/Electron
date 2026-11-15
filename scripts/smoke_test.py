@@ -10,6 +10,7 @@ import time
 
 os.environ["SUPABASE_URL"] = ""  # always run against the in-memory store
 os.environ["PHOTON_API_KEY"] = ""  # never send real iMessages from the smoke test
+os.environ["GEMINI_API_KEY"] = ""  # deterministic: keyword triage + rule-based router (no network)
 os.environ.setdefault("OFFER_TIMEOUT_SECONDS", "600")
 
 from messaging import dispatch  # noqa: E402
@@ -61,7 +62,7 @@ assert job2.status == JobStatus.offered
 # Workload: the tech already on a job is ranked below free techs and says so.
 from matching import rank_techs  # noqa: E402
 busy = next(r for r in rank_techs(job2) if r.tech_id == second.id)
-assert "on 1 job" in busy.reasons, busy.reasons
+assert "1 open jobs" in busy.reasons, busy.reasons  # C's rank_techs wording
 
 # Restart: timers are lost; resume_offers re-arms them and times out overdue ones.
 for t in list(dispatch._timers.values()):

@@ -18,11 +18,11 @@ DEMO_TECHS = [
     ("Marco Ruiz",  os.getenv("TECH_PHONE_1") or "+15550000001", ["plumbing", "water_heater"],
      40.3573, -74.6672, 4.9, "Plumber · leaks, fixtures and water heaters"),
     ("Dana Okafor", os.getenv("TECH_PHONE_2") or "+15550000002", ["plumbing", "drain", "painting"],
-     40.3487, -74.6593, 4.7, "Painting and general repair · interior paint, drywall patches, small drain clogs"),
+     40.3430, -74.5840, 4.7, "Painting and general repair · interior paint, drywall patches, small drain clogs"),
     ("Sam Patel",   "+15550000003", ["plumbing"],
-     40.3200, -74.6200, 4.4, "Plumber · faucets, toilets and supply lines"),
+     40.2340, -74.6600, 4.4, "Plumber · faucets, toilets and supply lines"),
     ("Lee Chen",    "+15550000004", ["plumbing", "gas"],
-     40.2930, -74.6820, 4.8, "Plumber and gas fitter · gas lines and appliance hookups"),
+     40.2500, -74.7900, 4.8, "Plumber and gas fitter · gas lines and appliance hookups"),
     ("Rita Gomez",  "+15550000005", ["drain", "sewer"],
      40.3790, -74.6100, 4.6, "Drain and sewer · clogs and main-line backups"),
     ("Tom Walsh",   "+15550000006", ["electrical"],
@@ -76,11 +76,13 @@ def _seed_techs() -> None:
     existing = {t.name: t for t in db.list_techs()}
     if existing:
         updated = 0
-        for name, _phone, skills, _lat, _lng, _rating, description in DEMO_TECHS:
-            if name in existing:
-                db.store.update("techs", existing[name].id, {"skills": skills, "description": description})
+        for name, _phone, skills, lat, lng, rating, description in DEMO_TECHS:
+            if name in existing:  # phones stay as they are (they're real people's numbers)
+                db.store.update("techs", existing[name].id, {"skills": skills, "description": description,
+                                                             "lat": lat, "lng": lng, "rating": rating})
                 updated += 1
-        print(f"[seed] techs already present ({len(existing)}); refreshed skills + descriptions for {updated}")
+        print(f"[seed] techs already present ({len(existing)}); refreshed skills, descriptions, "
+              f"locations and ratings for {updated}")
         return
     for name, phone, skills, lat, lng, rating, description in DEMO_TECHS:
         db.store.insert("techs", {
