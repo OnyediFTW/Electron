@@ -104,7 +104,9 @@ def _handle_customer_text(phone: str, text: str, photo_url: str | None, open_job
                 _decline_estimate(job)
                 return
     photon.typing(phone)  # '...' while the AI thinks
-    if NEW_JOB.match(text):
+    if NEW_JOB.match(text) or (photo_url and open_job and open_job.status == JobStatus.booked):
+        # A fresh photo after the job is booked is a new problem report: run the full triage
+        # (vision, safety, parts, quote, offer) instead of forwarding it to the booked tech.
         action, reply = "new_job", None
     else:
         tech = db.get_tech(open_job.assigned_tech_id) if open_job and open_job.assigned_tech_id else None

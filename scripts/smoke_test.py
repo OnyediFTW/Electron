@@ -110,6 +110,14 @@ offers3 = db.list_offers(job3.id)
 assert len(offers3) == 1 and offers3[0].tech_id == second.id, offers3
 assert any(e["message"].startswith("skipped") and first.name in e["message"] for e in db.list_events(job3.id))
 
+# A new photo after the job is booked is a new problem: full triage, not a forward to the booked tech.
+before = len(db.list_jobs())
+dispatch._handle_customer_text(CUSTOMER, "the pipes under my sink are leaking",
+                               "http://127.0.0.1:9/photo.jpg", db.get_job(job.id))
+assert len(db.list_jobs()) == before + 1, "a photo after booking should open a new job"
+assert db.list_jobs()[-1].status != JobStatus.new, "the new job should have been triaged"
+
 print(f"\nPASS: follow-ups joined the open job, {first.name} declined, {second.name} accepted, "
       f"'new job' opened a second job, workload ranking, restart resume, owner API, "
-      f"unreachable techs skipped. {len(db.list_messages())} messages logged.")
+      f"unreachable techs skipped, photo after booking opens a new job. "
+      f"{len(db.list_messages())} messages logged.")
