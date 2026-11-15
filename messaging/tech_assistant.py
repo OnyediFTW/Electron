@@ -1,9 +1,9 @@
 """Answers a tech's questions about a job, inside iMessage. Owner: Person A.
 
-answer(job, tech, question, accepted) -> str
+answer(job, tech, question, accepted, share_contact) -> str
 
 Gemini gets only the job's facts (and the photo) and must answer from them. The
-customer's number is only in the facts once this tech has accepted. Directions are an
+customer's number is only in the facts once the job is booked. Directions are an
 Apple Maps link built here, never by the model.
 
 FALLBACK (no GEMINI_API_KEY or every model fails): keyword answers for parts, photo,
@@ -39,7 +39,7 @@ def maps_link(job: Job) -> Optional[str]:
     return f"https://maps.apple.com/?ll={job.location.lat},{job.location.lng}&q=Customer" if job.location else None
 
 
-def _facts(job: Job, tech, accepted: bool) -> str:
+def _facts(job: Job, tech, share_contact: bool) -> str:
     lines = [f"Problem: {job.issue or 'not identified yet'}",
              f"Urgency: {job.urgency.value if job.urgency else 'unknown'}",
              f'Customer said: "{job.raw_text}"']
@@ -68,13 +68,14 @@ def _facts(job: Job, tech, accepted: bool) -> str:
     if job.location:
         lines.append(f"Distance from the plumber: {miles((job.location.lat, job.location.lng), (tech.lat, tech.lng)):.1f} mi")
         lines.append(f"Directions link (approximate customer location, no street address yet): {maps_link(job)}")
-    lines.append("Arrival time: not scheduled; the plumber and customer agree on it by text")
-    lines.append(f"Customer's phone: {job.customer_phone}" if accepted
-                 else "Customer's phone: only shared after the plumber accepts the job")
+    lines.append("Arrival time: booked; see the booking text" if job.status.value == "booked"
+                 else "Arrival time: not booked yet (the customer must OK the estimate first)")
+    lines.append(f"Customer's phone: {job.customer_phone}" if share_contact
+                 else "Customer's phone: shared once the job is booked")
     return "\n".join(lines)
 
 
-def _fallback(job: Job, tech, question: str, accepted: bool) -> str:
+def _fallback(job: Job, tech, question: str, share_contact: bool) -> str:
     q = question.lower()
     if any(w in q for w in ("part", "bring", "need", "size")):
         parts = "; ".join(f"{p.name} ({p.confidence:.0%} likely" + (f", ${p.price:.2f}" if p.price else "") + ")"
@@ -88,11 +89,14 @@ def _fallback(job: Job, tech, question: str, accepted: bool) -> str:
     if any(w in q for w in ("price", "quote", "cost", "pay")):
         return f"Quote for the customer: ${job.quote.low:.0f}-${job.quote.high:.0f}." if job.quote else "No quote yet."
     if any(w in q for w in ("number", "phone", "call", "contact")):
-        return f"Customer's number: {job.customer_phone}" if accepted else "You'll get the customer's number once you accept."
+        return (f"Customer's number: {job.customer_phone}" if share_contact
+                else "You'll get the customer's number once the job is booked.")
     return "I can tell you the parts, what the photo shows, where it is, or the quote."
 
 
-def answer(job: Job, tech, question: str, *, accepted: bool) -> str:
+def answer(job: Job, tech, question: str, *, accepted: bool, share_contact: bool = False) -> str:
+    """accepted: the tech has taken the job (else every reply ends with the YES/NO prompt).
+    share_contact: the job is booked, so the customer's phone may be given out."""
     closing = ("" if accepted else
                'End with: "Reply YES to take it or NO to pass."')
     reply = None
@@ -107,7 +111,7 @@ def answer(job: Job, tech, question: str, *, accepted: bool) -> str:
             image = _load_image(job.photo_url)
         except Exception:
             pass
-        prompt = PROMPT.format(closing=closing, facts=_facts(job, tech, accepted), question=question)
+        prompt = PROMPT.format(closing=closing, facts=_facts(job, tech, share_contact), question=question)
         contents = ([types.Part.from_bytes(data=image[1], mime_type=image[0])] if image else []) + [prompt]
         client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"), http_options=types.HttpOptions(timeout=10_000))
         for model in GEMINI_MODELS:
@@ -121,11 +125,11 @@ def answer(job: Job, tech, question: str, *, accepted: bool) -> str:
             except Exception as e:
                 log_event(job.id, "assistant", f"{model} failed ({e.__class__.__name__}), trying next")
     if not reply:
-        reply = _fallback(job, tech, question, accepted)
+        reply = _fallback(job, tech, question, share_contact)
         if not accepted:
             reply += " Reply YES to take it or NO to pass."
         log_event(job.id, "assistant", f"FALLBACK answer for {tech.name}: {question!r}")
-    # The model must not leak the number before acceptance, whatever it was asked.
-    if not accepted and job.customer_phone in reply:
-        reply = reply.replace(job.customer_phone, "(shared once you accept)")
+    # The model must not leak the number before booking, whatever it was asked.
+    if not share_contact and job.customer_phone in reply:
+        reply = reply.replace(job.customer_phone, "(shared once the job is booked)")
     return reply

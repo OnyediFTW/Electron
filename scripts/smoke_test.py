@@ -40,7 +40,11 @@ assert "dripping fast" in db.get_job(job.id).raw_text
 assert any("Update from the customer" in t for t in texts_to(first.phone)), texts_to(first.phone)
 assert len(db.list_offers(job.id)) == 1, "follow-up must not re-offer the job"
 
+# Offers take only YES or NO: "nope sorry" gets a reminder and the offer stays open; "No." declines.
 dispatch.handle_inbound(first.phone, "nope sorry")
+assert len(db.list_offers(job.id)) == 1 and db.list_offers(job.id)[0].response is None
+assert texts_to(first.phone)[-1] == "Reply YES to take the job or NO to pass.", texts_to(first.phone)[-1]
+dispatch.handle_inbound(first.phone, "No.")
 offers = db.list_offers(job.id)
 assert len(offers) == 2 and offers[0].response == "no", offers
 
@@ -57,9 +61,11 @@ assert any("when can you come?" in t for t in texts_to(second.phone)), texts_to(
 
 # The customer was asked to approve the estimate; "ok" books the job and tells the tech.
 assert any("Reply OK to confirm" in t for t in texts_to(CUSTOMER)), texts_to(CUSTOMER)
+assert not any("+1 (609) 555-0100" in t or CUSTOMER in t for t in texts_to(second.phone)), "phone before booking"
 dispatch.handle_inbound(CUSTOMER, "ok")
 assert db.get_job(job.id).status == JobStatus.booked, db.get_job(job.id).status
-assert any("Customer approved" in t for t in texts_to(second.phone)), texts_to(second.phone)
+booked_msg = next(t for t in texts_to(second.phone) if "Customer approved" in t)
+assert "Customer: +1 (609) 555-0100" in booked_msg, booked_msg
 
 # "new job" always starts a fresh job.
 dispatch.handle_inbound(CUSTOMER, "new job: toilet keeps running")
@@ -122,8 +128,21 @@ dispatch.handle_inbound(CUSTOMER, "new job: shower drain is clogged")
 assert db.list_jobs()[-1].status == JobStatus.offered
 before = len(db.list_jobs())
 dispatch.start_over()
-dispatch.handle_inbound(CUSTOMER, "my bathroom faucet is dripping and won't stop")
-assert len(db.list_jobs()) == before + 1, "after Start over the next text should open a new job"
+dispatch.handle_inbound(CUSTOMER, "my bathroom faucet is dripping and won't stop", "https://example.com/faucet.jpg")
+assert len(db.list_jobs()) == before + 1, "after Start over the next photo should open a new job"
+
+# Customer rules: no photo and no open job -> no reply and no job; the text waits for the photo.
+NEWBIE = "+16095550123"
+dispatch.handle_inbound(NEWBIE, "hi")
+dispatch.handle_inbound(NEWBIE, "my water heater is leaking from the bottom")
+assert not texts_to(NEWBIE) and not db.store.select("jobs", customer_phone=NEWBIE), texts_to(NEWBIE)
+dispatch.handle_inbound(NEWBIE, "", "https://example.com/heater.jpg")
+newbie_job = db.list_jobs()[-1]
+assert newbie_job.customer_phone == NEWBIE and "water heater is leaking" in newbie_job.raw_text, newbie_job
+# Off-topic with an open job: no reply.
+n = len(texts_to(NEWBIE))
+dispatch.handle_inbound(NEWBIE, "thanks!")
+assert len(texts_to(NEWBIE)) == n, texts_to(NEWBIE)[n:]
 
 # Part photos for the tech come from live listings that have an image, capped at 3.
 from agents import job_prep  # noqa: E402
@@ -135,5 +154,5 @@ assert "&prds=catalogid:42" in job_prep._short_link({"title": "PVC P-Trap 1-1/2 
 
 print(f"\nPASS: follow-ups joined the open job, {first.name} declined, {second.name} accepted, "
       f"'new job' opened a second job, workload ranking, restart resume, owner API, "
-      f"unreachable techs skipped, photo after booking opens a new job. "
+      f"unreachable techs skipped, photo after booking opens a new job, strict YES/NO, no reply without a photo or off-topic, contact info after booking. "
       f"{len(db.list_messages())} messages logged.")

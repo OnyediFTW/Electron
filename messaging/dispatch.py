@@ -14,6 +14,7 @@ price, time) is said plainly as unknown.
 import os
 import re
 import threading
+import time
 from datetime import datetime, timezone
 
 from agents import find_parts, intake, job_prep, quote
@@ -30,17 +31,27 @@ OFFER_TIMEOUT_SECONDS = float(os.getenv("OFFER_TIMEOUT_SECONDS", "60"))
 # and we don't tell customers a made-up arrival time. Set SCHEDULING_ENABLED=true to use it.
 SCHEDULING_ENABLED = os.getenv("SCHEDULING_ENABLED", "false").lower() in ("1", "true", "yes")
 
-YES = re.compile(r"^\s*(y|ya|yes|yep|yeah|sure|ok|okay|on it|accept|i'?ll take it)\b", re.I)
-NO = re.compile(r"^\s*(n|no|nope|nah|can'?t|cannot|pass|decline)\b", re.I)
+# An offer is answered only by YES or NO (any case, optional punctuation). Anything else is a
+# question for the assistant; a near-miss like "yeah" or "sure" gets a one-line reminder instead.
+YES = re.compile(r"^\s*yes\s*[.!]*\s*$", re.I)
+NO = re.compile(r"^\s*no\s*[.!]*\s*$", re.I)
+NEAR_ANSWER = re.compile(r"^\s*(y|ya|yes|yep|yeah|yup|sure|ok|okay|k|on it|accept|i'?ll take it|n|no|nope|nah|"
+                         r"pass|decline|can'?t|cannot)\b", re.I)
+
+
+def _near_answer(text: str) -> bool:
+    """'yeah', 'nope sorry', 'yes I can': meant as an answer but not the exact word. Questions aren't."""
+    return bool(NEAR_ANSWER.match(text)) and "?" not in text and len(text.split()) <= 6
 
 
 def _is_yes(text: str) -> bool:
-    """'yes!', 'ok', 'sure I'll take it'. A question ('ok what size trap?') is never a yes."""
-    return bool(YES.match(text)) and "?" not in text and len(text.split()) <= 5
+    return bool(YES.match(text))
 
 
 def _is_no(text: str) -> bool:
-    return bool(NO.match(text)) and "?" not in text and len(text.split()) <= 8
+    return bool(NO.match(text))
+
+
 NEW_JOB = re.compile(r"^\s*new job\b", re.I)  # escape hatch: always open a fresh job
 
 # A customer's text joins their open job instead of starting a second one.
@@ -90,10 +101,43 @@ def handle_inbound(phone: str, text: str, photo_url: str | None = None) -> None:
         raise
 
 
+# Texts that arrived before any photo: kept briefly so the photo that follows starts the job with them.
+_waiting_text: dict[str, tuple[float, str]] = {}
+WAITING_TEXT_SECONDS = 15 * 60
+
+
+def _hold_text(phone: str, text: str, why: str, job_id: str | None = None) -> None:
+    """Don't answer, but remember the text for a photo that may follow, and show it on the dashboard."""
+    if text.strip():
+        old = _waiting_text.get(phone)
+        joined = f"{old[1]}\n{text}" if old and time.time() - old[0] < WAITING_TEXT_SECONDS else text
+        _waiting_text[phone] = (time.time(), joined)
+    db.log_event(job_id, "messaging", f"no reply to {phone} ({why}): {text!r}")
+
+
+def _with_waiting_text(phone: str, text: str) -> str:
+    held = _waiting_text.pop(phone, None)
+    if held and time.time() - held[0] < WAITING_TEXT_SECONDS:
+        return "\n".join(t for t in (held[1], text) if t.strip())
+    return text
+
+
+def _booked_at(job: Job) -> str | None:
+    """The arrival time booked on the calendar, read from the job's trace ("... customer approved; Sun 10:00 AM")."""
+    for e in reversed(db.list_events(job.id)):
+        m = re.search(r"-> booked \(customer approved; (.+)\)$", e.get("message") or "")
+        if m:
+            return m.group(1)
+    return None
+
+
 def _handle_customer_text(phone: str, text: str, photo_url: str | None, open_job: Job | None) -> None:
-    """Gemini reads the text (and photo) against the customer's open job and decides:
-    same job (forward to its tech), new job (full triage), or chitchat (just reply)."""
-    # Waiting on this customer's OK for an estimate? A plain yes/no answers that, nothing else.
+    """Customer rules:
+    - Only a photo starts a job. A text with no photo and no open job gets no reply (it is held
+      and joined to the photo if one follows). "new job: ..." is the owner's override.
+    - With an open job, Gemini decides: same job (forward to the tech), new job (needs a photo),
+      reply (answer a question about the job from the facts), or ignore (off-topic: no reply).
+    - While an estimate waits for the customer's OK, a plain OK / NO answers it."""
     if open_job and open_job.status == JobStatus.accepted and not photo_url:
         with _dispatch_lock:
             job = db.get_job(open_job.id)
@@ -103,26 +147,38 @@ def _handle_customer_text(phone: str, text: str, photo_url: str | None, open_job
             if job.status == JobStatus.accepted and _declines(text):
                 _decline_estimate(job)
                 return
-    photon.typing(phone)  # '...' while the AI thinks
-    if NEW_JOB.match(text) or (photo_url and open_job and open_job.status == JobStatus.booked):
-        # A fresh photo after the job is booked is a new problem report: run the full triage
-        # (vision, safety, parts, quote, offer) instead of forwarding it to the booked tech.
+
+    if NEW_JOB.match(text):
+        action, reply = "new_job", None
+    elif not photo_url and not open_job:
+        _hold_text(phone, text, "no photo and no open job")
+        return
+    elif photo_url and open_job and open_job.status == JobStatus.booked:
+        # A fresh photo after the job is booked is a new problem report: full triage, not a forward.
         action, reply = "new_job", None
     else:
+        photon.typing(phone)  # '...' while the AI reads it
         tech = db.get_tech(open_job.assigned_tech_id) if open_job and open_job.assigned_tech_id else None
         r = ai_router.route(open_job, text, photo_url, tech_name=tech.name if tech else None,
-                            log_id=open_job.id if open_job else None)
+                            log_id=open_job.id if open_job else None,
+                            booked_at=_booked_at(open_job) if open_job else None)
         action, reply = r.action, r.reply
 
-    if action == "chitchat":
-        send_text(phone, reply or "Hi, this is Electron. Text a photo of the problem and I'll get a plumber on it.",
-                  job_id=open_job.id if open_job else None)
+    job_id = open_job.id if open_job else None
+    if action == "ignore":
+        db.log_event(job_id, "messaging", f"no reply to {phone} (off-topic): {text!r}")
+        return
+    if action == "reply":
+        send_text(phone, reply, job_id=job_id)
+        return
+    if action == "new_job" and not photo_url and not NEW_JOB.match(text):
+        _hold_text(phone, text, "a new problem but no photo yet", job_id)
         return
     with _dispatch_lock:
         if action == "same_job" and open_job:
             to_triage = handle_customer_followup(open_job, text, photo_url)
         else:
-            to_triage = _new_job(phone, text, photo_url)
+            to_triage = _new_job(phone, _with_waiting_text(phone, text), photo_url)
     if to_triage:
         _triage(to_triage)  # slow AI work, outside the lock
 
@@ -409,7 +465,10 @@ def handle_tech_reply(tech_id: str, text: str) -> None:
     if offer is None:
         job = _current_job_for(tech_id)
         if job and text.strip():  # questions about the job they already took
-            send_text(tech.phone, tech_assistant.answer(job, tech, text, accepted=True), job_id=job.id)
+            photon.typing(tech.phone)
+            send_text(tech.phone, tech_assistant.answer(job, tech, text, accepted=True,
+                                                        share_contact=job.status == JobStatus.booked),
+                      job_id=job.id)
         else:
             send_text(tech.phone, "No open offers for you right now.")
         return
@@ -420,6 +479,9 @@ def handle_tech_reply(tech_id: str, text: str) -> None:
         _accept(offer, tech, "said yes")
     elif _is_no(text):
         _decline(offer, tech, "declined")
+    elif _near_answer(text):  # "yeah", "sure", "nah": ask for the exact word, keep the offer open
+        _start_timer(offer.id, offer.job_id)
+        send_text(tech.phone, "Reply YES to take the job or NO to pass.", job_id=offer.job_id)
     else:  # a question about the offer: answer it in the chat, keep the offer open
         _start_timer(offer.id, offer.job_id)
         photon.typing(tech.phone)
@@ -504,6 +566,20 @@ def _real_slots(tech_id: str) -> list:
         return []
 
 
+def _contact_card(job: Job) -> str:
+    """What the tech needs to reach the customer, sent only once the job is booked."""
+    lines = [f"Customer: {_pretty_phone(job.customer_phone)}"]
+    link = tech_assistant.maps_link(job)
+    if link:
+        lines.append(f"Location (approximate): {link}")
+    return "\n".join(lines)
+
+
+def _pretty_phone(p: str) -> str:
+    m = re.fullmatch(r"\+1(\d{3})(\d{3})(\d{4})", p or "")
+    return f"+1 ({m[1]}) {m[2]}-{m[3]}" if m else p
+
+
 def _confirm(job: Job) -> None:
     """Customer said OK: the job is booked. With real scheduling, the time slot is booked here too."""
     tech = db.get_tech(job.assigned_tech_id)
@@ -515,13 +591,14 @@ def _confirm(job: Job) -> None:
         send_text(job.customer_phone, f"You're booked: {tech.name} arrives {slot.start:%a %b %d, %I:%M %p}. "
                                       f"Price: {_quote_text(job)}.", job_id=job.id)
         send_text(tech.phone, f"Customer approved the {_quote_text(job)} estimate. Booked for "
-                              f"{slot.start:%a %I:%M %p}, added to your calendar.", job_id=job.id)
+                              f"{slot.start:%a %I:%M %p}, added to your calendar.\n{_contact_card(job)}",
+                  job_id=job.id)
         return
     # Scheduling isn't connected yet: confirm the job, and say plainly that the time is set by text.
     advance(job.id, JobStatus.booked, "customer approved the estimate")
     send_text(job.customer_phone, f"Confirmed. {tech.name} will text you shortly to set a time.", job_id=job.id)
-    send_text(tech.phone, f"Customer approved the {_quote_text(job)} estimate. Text them at "
-                          f"{job.customer_phone} to set a time.", job_id=job.id)
+    send_text(tech.phone, f"Customer approved the {_quote_text(job)} estimate. Text them to set a time.\n"
+                          f"{_contact_card(job)}", job_id=job.id)
 
 
 def _decline_estimate(job: Job) -> None:
