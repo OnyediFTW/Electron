@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 
 from agents import find_parts, intake, quote
 from matching import book, free_slots, rank_techs
-from messaging import ai_router, photon
+from messaging import ai_router, photon, tech_assistant
 from messaging.send import send_text
 from messaging.state import advance
 from shared import db
@@ -29,8 +29,17 @@ OFFER_TIMEOUT_SECONDS = float(os.getenv("OFFER_TIMEOUT_SECONDS", "60"))
 # and we don't tell customers a made-up arrival time. Set SCHEDULING_ENABLED=true to use it.
 SCHEDULING_ENABLED = os.getenv("SCHEDULING_ENABLED", "false").lower() in ("1", "true", "yes")
 
-YES = re.compile(r"^\s*(y|ya|yes|yep|yeah|sure|ok|okay|on it|accept)\b", re.I)
+YES = re.compile(r"^\s*(y|ya|yes|yep|yeah|sure|ok|okay|on it|accept|i'?ll take it)\b", re.I)
 NO = re.compile(r"^\s*(n|no|nope|nah|can'?t|cannot|pass|decline)\b", re.I)
+
+
+def _is_yes(text: str) -> bool:
+    """'yes!', 'ok', 'sure I'll take it'. A question ('ok what size trap?') is never a yes."""
+    return bool(YES.match(text)) and "?" not in text and len(text.split()) <= 5
+
+
+def _is_no(text: str) -> bool:
+    return bool(NO.match(text)) and "?" not in text and len(text.split()) <= 8
 NEW_JOB = re.compile(r"^\s*new job\b", re.I)  # escape hatch: always open a fresh job
 
 # A customer's text joins their open job instead of starting a second one.
@@ -217,8 +226,12 @@ def _offer_text(job: Job, reasons: list[str]) -> str:
              f"**Likely parts:** {parts}",
              f"**Quote:** {_quote_text(job)}",
              f"**Why you:** {', '.join(reasons)}", "",
-             "Reply **YES** or **NO**, or open the job card below."]
+             "Reply **YES** or **NO**. Or ask me anything about it: parts, the photo, where it is."]
     return "\n".join(lines)
+
+
+# Off by default: everything stays inside iMessage. JOB_CARD_LINKS=true also sends the web job card.
+JOB_CARD_LINKS = os.getenv("JOB_CARD_LINKS", "false").lower() in ("1", "true", "yes")
 
 
 def job_card_url(offer_id: str) -> str | None:
@@ -251,7 +264,7 @@ def offer_next(job_id: str) -> None:
     offer = db.insert_offer(Offer(job_id=job_id, tech_id=tech.id, sent_at=datetime.now(timezone.utc)))
     advance(job_id, JobStatus.offered, f"to {tech.name}")
     send_text(tech.phone, _offer_text(job, top.reasons), job_id=job_id, photo_url=job.photo_url, markdown=True)
-    if card := job_card_url(offer.id):
+    if JOB_CARD_LINKS and (card := job_card_url(offer.id)):
         send_text(tech.phone, card, job_id=job_id)  # its own message so iMessage shows it as a card
     _start_timer(offer.id, job_id)
 
@@ -298,22 +311,38 @@ def _pending_offer_for(tech_id: str) -> Offer | None:
     return None
 
 
+def _current_job_for(tech_id: str) -> Job | None:
+    """The newest recent job this tech has taken (accepted or booked)."""
+    cutoff = datetime.now(timezone.utc).timestamp() - JOB_WINDOW_HOURS * 3600
+    for row in reversed(db.store.select("jobs", assigned_tech_id=tech_id)):
+        created = row.get("created_at")
+        if row["status"] in ("accepted", "booked") and created and datetime.fromisoformat(created).timestamp() > cutoff:
+            return Job(**row)
+    return None
+
+
 def handle_tech_reply(tech_id: str, text: str) -> None:
     offer = _pending_offer_for(tech_id)
     tech = db.get_tech(tech_id)
     if offer is None:
-        send_text(tech.phone, "No open offers for you right now.")
+        job = _current_job_for(tech_id)
+        if job and text.strip():  # questions about the job they already took
+            send_text(tech.phone, tech_assistant.answer(job, tech, text, accepted=True), job_id=job.id)
+        else:
+            send_text(tech.phone, "No open offers for you right now.")
         return
     if timer := _timers.pop(offer.id, None):
         timer.cancel()
 
-    if YES.match(text):
+    if _is_yes(text):
         _accept(offer, tech, "said yes")
-    elif NO.match(text):
+    elif _is_no(text):
         _decline(offer, tech, "declined")
-    else:
+    else:  # a question about the offer: answer it in the chat, keep the offer open
         _start_timer(offer.id, offer.job_id)
-        send_text(tech.phone, "Sorry, reply YES or NO.", job_id=offer.job_id)
+        photon.typing(tech.phone)
+        send_text(tech.phone, tech_assistant.answer(db.get_job(offer.job_id), tech, text, accepted=False),
+                  job_id=offer.job_id)
 
 
 def _accept(offer: Offer, tech, how: str) -> None:
