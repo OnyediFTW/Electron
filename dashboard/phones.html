@@ -10,7 +10,8 @@
 <style>
   :root {
     --board: #4B5259; --hole: #2C3035; --ink: #F3F4F1; --ink-2: #DADDE0;
-    --tape: #2449B8; --bezel: #121417; --screen: #FFFFFF; --text: #16181B; --muted: #646A72;
+    --tape: #2449B8; --bezel: #121417; --screen: #FFFFFF; --text: #16181B; --muted: #565C64; --faint: #6B7178;
+    --accent: #FFC83D; --accent-ink: #2B2200; --accent-soft: #FFF5D1; --go: #2E7A44;
     --out: #2563EB; --in: #ECEEF1;
     --cu: linear-gradient(180deg, #F0B38C 0%, #CF7742 34%, #A0532B 72%, #6E3519 100%);
     --cu-ring: linear-gradient(180deg, #F6C29F 0%, #D9834F 38%, #A85A30 74%, #74391B 100%);
@@ -30,16 +31,22 @@
   .sub { margin: 12px 0 0; font-size: 19px; line-height: 1.45; color: var(--ink-2); white-space: nowrap; }
   .sub strong { color: var(--ink); font-weight: 600; }
 
-  .tape { background: var(--tape); color: #fff; font-family: 'IBM Plex Mono', monospace; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; border-radius: 2px; box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 2px 4px rgba(0,0,0,.35); text-shadow: 0 1px 0 rgba(0,0,0,.35); }
+  .tape { background: var(--tape); color: #fff; font-family: 'IBM Plex Mono', monospace; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; border-radius: 2px; box-shadow: 0 2px 4px rgba(0,0,0,.35); }
   .tape.sm { font-size: 13px; padding: 6px 11px; }
   .tape.lg { font-size: 15px; padding: 7px 14px; letter-spacing: .18em; }
 
-  .pipe { height: 24px; background: var(--cu); border-radius: 3px; transition: filter .5s ease, box-shadow .5s ease; }
-  .ring { width: 16px; height: 32px; background: var(--cu-ring); border-radius: 3px; }
-  .pipe.hot { filter: brightness(1.35) saturate(1.2); box-shadow: 0 0 18px 4px rgba(255,170,110,.55); }
+  .pipe { height: 24px; background: var(--cu); border-radius: 3px; overflow: hidden; }
+  /* A message moving through a pipe, in the direction it travels */
+  .flow { position: absolute; top: 5px; height: 14px; width: 64px; border-radius: 7px; background: var(--accent);
+    box-shadow: 0 1px 3px rgba(0,0,0,.35); animation: flow-ltr .9s cubic-bezier(.16,1,.3,1) forwards; }
+  .flow.rtl { animation-name: flow-rtl; }
+  @keyframes flow-ltr { from { left: -70px; } to { left: 100%; } }
+  @keyframes flow-rtl { from { left: 100%; } to { left: -70px; } }
 
   .btn { appearance: none; border: 0; cursor: pointer; }
-  .btn:focus-visible { outline: 3px solid #FFD3B5; outline-offset: 3px; }
+  .btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+  ::selection { background: var(--accent); color: var(--accent-ink); }
+  .thread, .rows { scrollbar-width: thin; scrollbar-color: #C9CDD2 transparent; }
   .btn:hover { filter: brightness(1.12); }
 
   .phone { width: 300px; height: 640px; padding: 11px; background: var(--bezel); border-radius: 46px; box-shadow: 0 30px 50px rgba(0,0,0,.45), inset 0 0 0 2px #2B2F34; }
@@ -47,45 +54,51 @@
   .head { padding: 24px 16px 12px; border-bottom: 1px solid #ECEDEF; display: flex; flex-direction: column; align-items: center; gap: 4px; }
   .avatar { width: 40px; height: 40px; border-radius: 50%; background: #1E2328; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 16px; }
   .name { font-size: 13px; font-weight: 600; }
-  .line { font-size: 11px; color: var(--muted); min-height: 14px; }
-  .thread { flex: 1; overflow-y: auto; padding: 14px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; line-height: 1.35; scroll-behavior: smooth; }
-  .empty { margin: auto; text-align: center; color: var(--muted); font-size: 12px; line-height: 1.5; padding: 0 18px; }
-  .stamp { align-self: center; font-size: 11px; color: var(--muted); margin: 4px 0; }
+  .line { font-size: 12px; color: var(--muted); min-height: 14px; }
+  .thread { flex: 1; overflow-y: auto; padding: 14px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.38; scroll-behavior: smooth; }
+  .empty { margin: auto; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.5; padding: 0 18px; }
+  .stamp { align-self: center; font-size: 12px; color: var(--muted); margin: 4px 0; }
   .b { max-width: 82%; padding: 8px 12px; white-space: pre-line; overflow-wrap: anywhere; animation: pop .25s ease-out; }
   .b.mine { align-self: flex-end; background: var(--out); color: #fff; border-radius: 18px 18px 4px 18px; }
   .b.theirs { align-self: flex-start; background: var(--in); border-radius: 18px 18px 18px 4px; }
   .b a { color: inherit; text-decoration: underline; word-break: break-all; }
   .photo { align-self: flex-end; width: 176px; border-radius: 16px; display: block; animation: pop .25s ease-out; }
   .compose { padding: 8px 12px 16px; }
-  .compose input { width: 100%; border: 1px solid #D5D8DD; border-radius: 18px; padding: 8px 14px; font: inherit; font-size: 12.5px; color: var(--text); background: #fff; }
+  .compose input { width: 100%; border: 1px solid #D5D8DD; border-radius: 18px; padding: 8px 14px; font: inherit; font-size: 13px; color: var(--text); background: #fff; }
   @keyframes pop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-  @media (prefers-reduced-motion: reduce) { .b, .photo { animation: none; } .pipe { transition: none; } .thread { scroll-behavior: auto; } }
+  @media (prefers-reduced-motion: reduce) {
+    .b, .photo, .shot, .row, .flow, .shot .tag.on, .pill.changed { animation: none !important; }
+    .bar span { transition: none !important; }
+    .thread { scroll-behavior: auto; }
+  }
 
   /* Ranking board: how the algorithm picked the plumber, factor by factor */
   #board { left: 600px; top: 214px; width: 340px; }
   .card { position: absolute; left: 0; top: 56px; width: 340px; height: 640px; background: #FBFBF9; color: var(--text); border-radius: 14px; box-shadow: 0 30px 50px rgba(0,0,0,.45), inset 0 0 0 1px #E3E5E8; display: flex; flex-direction: column; overflow: hidden; }
   .card .top { padding: 18px 18px 12px; border-bottom: 1px solid #E8EAED; }
-  .eyebrow { font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
-  .job { margin-top: 6px; font-size: 16px; font-weight: 600; line-height: 1.3; }
-  .boost { margin-top: 6px; font-size: 12px; color: #A0532B; font-weight: 500; min-height: 16px; }
+  .job { font-size: 17px; font-weight: 600; line-height: 1.3; }
+  .boost { margin-top: 6px; font-size: 13px; color: #A0532B; font-weight: 500; min-height: 16px; }
   .rows { flex: 1; overflow-y: auto; padding: 8px 18px; }
-  .row { padding: 10px 0 11px; border-bottom: 1px dashed #E1E3E6; animation: pop .3s ease-out; }
+  .row { padding: 8px 8px 9px; margin: 0 -8px; border-bottom: 1px solid #ECEEF0; border-radius: 6px; transition: background-color .4s ease; }
+  .row.fresh { animation: pop .35s cubic-bezier(.16,1,.3,1) both; }
   .row:last-child { border-bottom: 0; }
   .row .l1 { display: flex; align-items: baseline; gap: 8px; }
-  .rank { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--muted); width: 20px; }
-  .who { font-size: 14.5px; font-weight: 600; flex: 1; }
+  .rank { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--muted); width: 20px; }
+  .who { font-size: 15px; font-weight: 600; flex: 1; }
   .score { font-family: 'IBM Plex Mono', monospace; font-size: 19px; font-weight: 600; }
-  .bar { display: flex; height: 9px; margin: 7px 0 6px 28px; border-radius: 2px; overflow: hidden; background: #EEF0F2; }
-  .bar span { display: block; height: 100%; transition: width .5s ease; }
-  .facts { margin-left: 28px; font-size: 11.5px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
-  .pill { font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; padding: 2px 7px; border-radius: 2px; white-space: nowrap; color: #fff; background: #9AA1A9; }
-  .pill.offered { background: var(--tape); }
-  .pill.took, .pill.booked { background: #2F8A4C; }
-  .pill.passed, .pill.noreply { background: #7A8590; text-decoration: line-through; }
-  .pill.skip { background: transparent; color: var(--muted); box-shadow: inset 0 0 0 1px #C5CAD0; }
-  .row.lead .who { color: var(--tape); }
-  .row.out { opacity: .55; }
-  .legend { padding: 12px 18px 16px; border-top: 1px solid #E8EAED; font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+  .bar { display: flex; height: 8px; margin: 6px 0 5px 28px; border-radius: 2px; overflow: hidden; background: #EEF0F2; }
+  .bar span { display: block; height: 100%; transition: width .7s cubic-bezier(.16,1,.3,1); }
+  .facts { margin-left: 28px; font-size: 12.5px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+  .pill { font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; padding: 2px 7px; border-radius: 2px; white-space: nowrap;
+    color: var(--muted); box-shadow: inset 0 0 0 1px #C5CAD0; }
+  .pill.offered { color: var(--accent-ink); background: var(--accent); box-shadow: none; }
+  .pill.took, .pill.booked { color: #fff; background: var(--go); box-shadow: none; }
+  .pill.changed { animation: nudge .6s cubic-bezier(.16,1,.3,1); }
+  @keyframes nudge { 0% { transform: scale(1.18); } 100% { transform: none; } }
+  .row.lead { background: var(--accent-soft); }
+  .row.out .who, .row.out .score { color: var(--faint); }
+  .row.out .bar { opacity: .45; }
+  .legend { padding: 12px 18px 16px; border-top: 1px solid #E8EAED; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
   .keys { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 6px; }
   .keys i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
   .f-skill { background: #1E2328; } .f-distance { background: #2563EB; } .f-free { background: #CF7742; }
@@ -95,12 +108,14 @@
   .shot { position: relative; align-self: flex-end; width: 176px; margin: 0; animation: pop .25s ease-out; }
   .shot .photo { width: 100%; }
   .shot .tag { position: absolute; left: 6px; right: 6px; bottom: 6px; display: none; padding: 4px 7px; border-radius: 2px;
-    background: var(--tape); color: #fff; font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600;
-    line-height: 1.3; letter-spacing: .03em; box-shadow: 0 1px 3px rgba(0,0,0,.35); }
-  .shot .tag.on { display: block; animation: pop .3s ease-out; }
+    background: var(--accent); color: var(--accent-ink); font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600;
+    line-height: 1.3; letter-spacing: .02em; box-shadow: 0 2px 4px rgba(0,0,0,.3); }
+  /* Prints across the photo when the AI finishes reading it */
+  .shot .tag.on { display: block; animation: print .7s cubic-bezier(.16,1,.3,1) both; }
+  @keyframes print { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
   .skills { margin: 3px 0 0 28px; display: flex; flex-wrap: wrap; gap: 4px; }
-  .skills span { font-size: 10.5px; color: #3D434A; background: #ECEEF1; border-radius: 3px; padding: 1px 6px; }
-  .skills span.match { background: #DCE5FB; color: #1C3E9E; font-weight: 600; }
+  .skills span { font-size: 12px; color: #3D434A; background: #ECEEF1; border-radius: 3px; padding: 1px 6px; }
+  .skills span.match { background: var(--tape); color: #fff; font-weight: 600; }
 
   .foot { font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: var(--ink-2); }
   .live { display: inline-flex; align-items: center; gap: 8px; }
@@ -119,30 +134,18 @@
 
   <!-- Customer <-> Electron (the ranking board) <-> each plumber. Plumbers are equals: the board decides. -->
   <div id="pipeA" class="pipe abs" style="left: 400px; top: 430px; width: 220px" aria-hidden="true"></div>
-  <div class="ring abs" style="left: 486px; top: 426px" aria-hidden="true"></div>
-  <div class="ring abs" style="left: 552px; top: 426px" aria-hidden="true"></div>
   <div id="pipeB" class="pipe abs" style="left: 400px; top: 720px; width: 220px" aria-hidden="true"></div>
-  <div class="ring abs" style="left: 520px; top: 716px" aria-hidden="true"></div>
   <div id="pipeC" class="pipe abs" style="left: 940px; top: 430px; width: 180px" aria-hidden="true"></div>
-  <div class="ring abs" style="left: 1030px; top: 426px" aria-hidden="true"></div>
   <div id="pipeD" class="pipe abs" style="left: 940px; top: 760px; width: 560px" aria-hidden="true"></div>
-  <div class="ring abs" style="left: 1006px; top: 756px" aria-hidden="true"></div>
-  <div class="ring abs" style="left: 1432px; top: 756px" aria-hidden="true"></div>
-
-  <div class="tape sm abs" style="left: 446px; top: 384px; transform: rotate(-1.5deg)">Text →</div>
-  <div class="tape sm abs" style="left: 452px; top: 758px; transform: rotate(1deg)">← Reply</div>
-  <div class="tape sm abs" style="left: 968px; top: 384px; transform: rotate(1deg)">Offer →</div>
-  <div class="tape sm abs" style="left: 968px; top: 798px; transform: rotate(-1deg)">Offer →</div>
 
   <div id="phones"></div>
 
   <div id="board" class="abs">
     <div style="position: absolute; left: 0; top: 0; width: 340px; display: flex; justify-content: center">
-      <div class="tape lg" style="transform: rotate(0.6deg); white-space: nowrap">Who gets the job</div>
+      <div class="tape lg" style="white-space: nowrap">Who gets the job</div>
     </div>
     <div class="card" aria-live="polite">
       <div class="top">
-        <div class="eyebrow">Matching · not an AI guess</div>
         <div class="job" id="rankJob">Waiting for a job</div>
         <div class="boost" id="rankBoost"></div>
       </div>
@@ -183,7 +186,6 @@
 // Opened straight from disk (file://)? The data lives on the Electron server, so go there.
 if (location.protocol === "file:") location.replace("http://localhost:8000/phones");
 const LEFT = { customer: 120, tech: 1100, backup: 1480 };
-const TILT = { customer: -1, tech: 0.8, backup: -0.6 };
 const EMPTY = {
   customer: "No messages yet. Text a photo of the problem to start a job.",
   tech: "No messages yet. The offer goes to whichever plumber the board ranks highest.",
@@ -211,17 +213,18 @@ function slotFor(p) {
   if (slots[p.role]) return slots[p.role];
   const node = document.getElementById("phoneTpl").content.firstElementChild.cloneNode(true);
   node.style.left = LEFT[p.role] + "px"; node.style.top = "214px";
-  node.querySelector("[data-label]").style.transform = `rotate(${TILT[p.role]}deg)`;
   node.querySelector("[data-compose]").placeholder =
     p.role === "customer" ? "Text from Messages on your Mac" : "Reply YES or NO from the phone";
   document.getElementById("phones").appendChild(node);
   return (slots[p.role] = node);
 }
 
-function flash(id) {
+// A pulse runs through the pipe the message travels: customer -> Electron -> plumber, and back.
+function flow(id, rtl) {
   const pipe = document.getElementById(id);
-  pipe.classList.add("hot");
-  setTimeout(() => pipe.classList.remove("hot"), 1400);
+  const pulse = el("span", rtl ? "flow rtl" : "flow");
+  pulse.addEventListener("animationend", () => pulse.remove());
+  pipe.appendChild(pulse);
 }
 
 
@@ -267,7 +270,8 @@ function render(data) {
         thread.appendChild(shot);
       }
       if (m.text) { const b = el("div", "b " + (mine ? "mine" : "theirs")); b.innerHTML = md(m.text); thread.appendChild(b); }
-      flash(p.role === "tech" ? "pipeC" : p.role === "backup" ? "pipeD" : mine ? "pipeA" : "pipeB");
+      if (p.role === "customer") flow(mine ? "pipeA" : "pipeB", !mine);
+      else flow(p.role === "tech" ? "pipeC" : "pipeD", mine);  // to a plumber runs right, their reply runs back
     }
     seen[p.role] = msgs.length;
     thread.scrollTop = thread.scrollHeight;
@@ -277,8 +281,8 @@ function render(data) {
 // ---------- ranking board ----------
 const FACTORS = [["skill", "Skill"], ["distance", "Distance"], ["free", "Free time"], ["rating", "Rating"], ["workload", "Fair share"]];
 const PILL = { "offered": ["offered", "Offered"], "took it": ["took", "Took it"], "booked": ["booked", "Booked"],
-  "passed": ["passed", "Passed"], "no reply": ["noreply", "No reply"], "not on iMessage": ["skip", "Not on iMessage"], "in line": ["", "In line"] };
-let sessionStart = null, rankKey = "";
+  "passed": ["passed", "Passed"], "no reply": ["noreply", "No reply"], "not on iMessage": ["skip", "Not on iMessage"] };
+let sessionStart = null, rankKey = "", rankJobId = null, lastStates = {};
 
 const SKILL_NAME = { plumbing: "Plumbing", drain: "Drains", water_heater: "Water heaters", sewer: "Sewer",
   gas: "Gas lines", electrical: "Electrical", painting: "Painting" };
@@ -316,16 +320,20 @@ function renderRanking(r) {
   }
   const max = Object.values(w).reduce((a, b) => a + b, 0) || 100;
   const trade = r.job && r.job.trade;
+  const newJob = r.job && r.job.id !== rankJobId;  // a fresh ranking: rows slide in, bars grow from zero
+  if (newJob) { rankJobId = r.job.id; lastStates = {}; }
+  const grow = [];
   rows.replaceChildren(...r.techs.map((t, i) => {
     if (t.score == null) {  // left out before scoring: lacks the skill for this kind of job
-      const row = el("div", "row out");
+      const row = el("div", newJob ? "row out fresh" : "row out");
       const l1 = el("div", "l1");
       l1.append(el("span", "rank", "–"), el("span", "who", t.name), el("span", "pill skip", t.state));
       row.append(l1, skillTags(t.skills, trade));
       return row;
     }
-    const row = el("div", "row");
-    const [cls, label] = PILL[t.state] || ["", t.state];
+    const row = el("div", newJob ? "row fresh" : "row");
+    if (newJob) row.style.animationDelay = `${i * 60}ms`;
+    const [cls, label] = PILL[t.state] || ["", ""];
     if (["offered", "took it", "booked"].includes(t.state)) row.classList.add("lead");
     if (["passed", "no reply", "not on iMessage"].includes(t.state)) row.classList.add("out");
     const l1 = el("div", "l1");
@@ -334,14 +342,22 @@ function renderRanking(r) {
     bar.title = FACTORS.map(([k, n]) => `${n} ${t.points[k]}`).join(" + ");
     for (const [k] of FACTORS) {
       const seg = el("span", `f-${k}`);
-      seg.style.width = (100 * Math.max(0, t.points[k]) / max) + "%";
+      const width = (100 * Math.max(0, t.points[k]) / max) + "%";
+      if (newJob) { seg.style.width = "0"; grow.push([seg, width]); } else seg.style.width = width;
       bar.appendChild(seg);
     }
     const facts = el("div", "facts");
-    facts.append(el("span", "", factsLine(t.facts)), el("span", `pill ${cls}`, label));
+    const pill = label ? el("span", `pill ${cls}`, label) : el("span");
+    if (label && lastStates[t.name] && lastStates[t.name] !== t.state) pill.classList.add("changed");  // status just moved
+    lastStates[t.name] = t.state;
+    facts.append(el("span", "", factsLine(t.facts)), pill);
     row.append(l1, skillTags(t.skills, trade), bar, facts);
     return row;
   }));
+  if (grow.length) requestAnimationFrame(() => requestAnimationFrame(() => grow.forEach(([seg, w]) => (seg.style.width = w))));
+  // Keep the plumber who holds the job in view, even when they rank below the fold
+  const lead = rows.querySelector(".row.lead");
+  if (lead) lead.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 }
 
 async function pollRanking() {

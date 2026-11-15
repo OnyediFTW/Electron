@@ -128,7 +128,7 @@ def api_ranking(after: str | None = None):
     ranking = [e for e in events if e.get("agent") == "ranking"]
     urgent = job.get("urgency") == "high"
     w = {**WEIGHTS, "free": WEIGHTS["free"] * (URGENT_FREE_MULTIPLIER if urgent else 1)}
-    info = {"issue": job.get("issue") or "Reading the photo…", "urgency": job.get("urgency"),
+    info = {"id": job["id"], "issue": job.get("issue") or "Reading the photo…", "urgency": job.get("urgency"),
             "status": job["status"], "trade": job.get("trade"), "weights": w,
             "urgent_boost": URGENT_FREE_MULTIPLIER if urgent else None}
     if not ranking:
