@@ -240,7 +240,13 @@ function prepHTML(p) {
     <p class="fine">${esc(e.basis)}</p>` : "";
   return `<h2>Job prep</h2><p class="sum">${esc(p.summary)}</p>${money}
     <h3>Check first</h3><ol>${p.causes.map(c => `<li><b>${esc(c.cause)}</b> <span class="fine">${Math.round(c.likelihood * 100)}%</span><br>${esc(c.confirm)}</li>`).join("")}</ol>
-    <h3>Parts plan</h3><ul>${p.parts_plan.map(x => `<li><b>${esc(x.pick)}</b> for the ${esc(x.part)} · ~$${Math.round(x.est_low)}–${Math.round(x.est_high)} · ${esc(x.buy)}<br><span class="fine">${esc(x.why)}${x.avoid ? " Skip: " + esc(x.avoid) : ""}</span></li>`).join("")}</ul>
+    <h3>Parts to bring</h3><ul>${p.parts_plan.map(x => {
+      const l = x.live;
+      const price = l ? `<b>$${l.price.toFixed(2)}</b> at ${esc(l.store)}${l.rating ? ` · ${l.rating}★` : ""}${l.link ? ` · <a href="${esc(l.link)}" target="_blank" rel="noopener">Buy</a>` : ""}`
+                      : `~$${Math.round(x.est_low)}–${Math.round(x.est_high)} <span class="fine">est.</span>`;
+      const alt = l && l.alt ? `<br><span class="fine">Cheaper online: $${l.alt.price.toFixed(2)} at ${esc(l.alt.store)}${l.alt.link ? ` · <a href="${esc(l.alt.link)}" target="_blank" rel="noopener">link</a>` : ""}</span>` : "";
+      return `<li><b>${esc(x.pick)}</b> (${esc(x.part)}) · ${price} · ${esc(x.buy)}${alt}<br><span class="fine">${esc(x.why)}${x.avoid ? " Skip: " + esc(x.avoid) : ""}</span></li>`;
+    }).join("")}</ul>
     ${p.tools.length ? `<p><b>Bring:</b> ${p.tools.map(esc).join(", ")}</p>` : ""}
     <p class="fine">${esc(p.source)}${p.sent_to ? " · sent to the tech" : ""}</p>`;
 }
