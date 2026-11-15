@@ -30,10 +30,12 @@ create table if not exists jobs (
   assigned_tech_id uuid references techs(id),
   quote            jsonb,                          -- {low, high}
   photo_description text,                          -- intake's description of the photo, for techs
+  history_note     text,                           -- intake's note on related past jobs, for techs
   created_at       timestamptz not null default now()
 );
 
 alter table jobs add column if not exists photo_description text;
+alter table jobs add column if not exists history_note text;
 
 create table if not exists offers (
   id       uuid primary key default gen_random_uuid(),
@@ -77,6 +79,9 @@ create index if not exists offers_job_idx on offers(job_id);
 
 -- Hackathon: the backend uses the service-role key, which bypasses RLS.
 -- The dashboard reads through FastAPI (/api/...), so no anon policies are needed.
+
+-- Job prep (agents/job_prep.py): causes, tools, parts plan, owner economics.
+alter table jobs add column if not exists prep jsonb;
 
 -- Make Supabase's REST API see new columns right away (otherwise PGRST204 until it refreshes).
 notify pgrst, 'reload schema';

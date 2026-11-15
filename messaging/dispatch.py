@@ -16,7 +16,7 @@ import re
 import threading
 from datetime import datetime, timezone
 
-from agents import find_parts, intake, quote
+from agents import find_parts, intake, job_prep, quote
 from matching import book, free_slots, rank_techs
 from messaging import ai_router, photon, tech_assistant
 from messaging.send import send_text
@@ -152,6 +152,7 @@ def _triage(job: Job) -> None:
         job = db.get_job(job.id) or job  # pick up text attached since it was queued
         photon.typing(job.customer_phone)  # '...' while Gemini reads the photo
         triaged = intake(job.photo_url, job.raw_text, customer_phone=job.customer_phone, job_id=job.id)
+        _send_safety_once(job, triaged.safety_instruction)
         if triaged.follow_up_question:
             send_text(job.customer_phone, triaged.follow_up_question, job_id=job.id)
             return
@@ -162,14 +163,40 @@ def _triage(job: Job) -> None:
                 return  # someone already moved it on
             db.update_job_fields(job.id, trade=triaged.trade, issue=triaged.issue, urgency=triaged.urgency,
                                  parts=parts, location=triaged.location or _demo_location(), quote=q,
-                                 **({"photo_description": triaged.photo_description}
-                                    if triaged.photo_description else {}))
+                                 **{k: v for k, v in (("photo_description", triaged.photo_description),
+                                                      ("history_note", triaged.history_note)) if v})
             advance(job.id, JobStatus.triaged)
-            send_text(job.customer_phone, "Got it, finding a plumber for you now.", job_id=job.id)
+            welcome = "Welcome back! " if triaged.history_note else ""
+            send_text(job.customer_phone, f"{welcome}Got it, finding a plumber for you now.", job_id=job.id)
             offer_next(job.id)
+        # Research the job while techs decide, so the prep is ready when someone says YES.
+        threading.Thread(target=_run_prep, args=(job.id,), daemon=True).start()
     finally:
         with _dispatch_lock:
             _triaging.discard(job.id)
+
+
+def _run_prep(job_id: str) -> None:
+    try:
+        prep = job_prep.prepare(db.get_job(job_id))
+        if prep:
+            with _dispatch_lock:
+                db.update_job_fields(job_id, prep=prep)
+            _maybe_send_prep(job_id)
+    except Exception as e:
+        db.log_event(job_id, "error", f"job prep failed: {e!r}")
+
+
+def _maybe_send_prep(job_id: str) -> None:
+    """Text the prep to the tech who took the job, once: on accept if it's ready, else when it's done."""
+    with _dispatch_lock:
+        job = db.get_job(job_id)
+        if not job or not job.prep or job.prep.get("sent_to") or not job.assigned_tech_id \
+                or job.status not in (JobStatus.accepted, JobStatus.booked):
+            return
+        tech = db.get_tech(job.assigned_tech_id)
+        db.update_job_fields(job_id, prep={**job.prep, "sent_to": tech.id})
+    send_text(tech.phone, job_prep.tech_message(job, job.prep), job_id=job_id, markdown=True)
 
 
 def handle_customer_followup(job: Job, text: str, photo_url: str | None) -> Job | None:
@@ -212,6 +239,15 @@ def _start_timer(offer_id: str, job_id: str, delay: float = OFFER_TIMEOUT_SECOND
     t.start()
 
 
+def _send_safety_once(job: Job, instruction: str | None) -> None:
+    """Danger first: text the customer what to do right now, before any follow-up or dispatch.
+    Once per job, even when a follow-up answer triggers triage again."""
+    if not instruction or any(e.get("agent") == "safety" for e in db.list_events(job.id)):
+        return
+    db.log_event(job.id, "safety", f"told customer: {instruction}")
+    send_text(job.customer_phone, instruction, job_id=job.id)
+
+
 URGENCY_LABEL = {"high": "🔴 Urgent", "medium": "🟡 Soon", "low": "🟢 Whenever"}
 
 
@@ -223,6 +259,7 @@ def _offer_text(job: Job, reasons: list[str]) -> str:
     lines = [head, *([urgency] if urgency else []), "",
              f'**Customer said:** "{job.raw_text}"',
              *([f"**Photo shows:** {job.photo_description}"] if job.photo_description else []),
+             *([f"**History:** {job.history_note}"] if job.history_note else []),
              f"**Likely parts:** {parts}",
              f"**Quote:** {_quote_text(job)}",
              f"**Why you:** {', '.join(reasons)}", "",
@@ -350,6 +387,7 @@ def _accept(offer: Offer, tech, how: str) -> None:
     db.update_job_fields(offer.job_id, assigned_tech_id=tech.id)
     advance(offer.job_id, JobStatus.accepted, f"{tech.name} {how}")
     _schedule(offer.job_id, tech.id)
+    _maybe_send_prep(offer.job_id)
 
 
 def _decline(offer: Offer, tech, how: str) -> None:

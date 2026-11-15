@@ -14,14 +14,16 @@ from __future__ import annotations
 import io
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
 
 import httpx
 from pydantic import BaseModel, ValidationError
 
+from shared import db
 from shared.db import log_event
-from shared.schema import Job, Part, Urgency
+from shared.schema import Job, Location, Part, Urgency
 
 # Tried in order: if one is overloaded (503) or fails, the next one answers.
 GEMINI_MODELS = [m.strip() for m in os.getenv(
@@ -29,6 +31,22 @@ GEMINI_MODELS = [m.strip() for m in os.getenv(
 MAX_EDGE_PX = 1568
 DEFAULT_FOLLOW_UP = "Can you send a closer photo of where the water is coming from?"
 PLUMBING_TRADES = {"plumbing", "drain", "water_heater", "gas", "sewer"}
+
+# Gas is the one case where the AI must never decide alone: this exact text always goes out.
+GAS_WORDS = ("smell gas", "gas smell", "smells like gas", "gas leak", "rotten egg", "hissing gas")
+GAS_SAFETY = ("If you smell gas, please leave the house now. Don't flip light switches or use "
+              "anything with a flame, and call your gas company or 911 from outside. "
+              "We'll send a plumber once it's safe.")
+# FALLBACK safety texts when the LLM is down, by trade, only for high urgency.
+FALLBACK_SAFETY = {
+    "plumbing": ("While you wait: if water is still running, turn the shutoff valve under the "
+                 "fixture clockwise until it stops. If you can't find it, use the main shutoff "
+                 "where the water line enters the house."),
+    "water_heater": ("While you wait: if the water heater is leaking, turn off its power or gas "
+                     "and close the cold-water valve on top of the tank."),
+    "sewer": "While you wait: please don't run water or flush toilets, so it doesn't back up further.",
+}
+MAX_HISTORY_JOBS = 5
 
 SYSTEM_PROMPT = """You triage service requests for a small plumbing company. A customer \
 texted a photo (sometimes missing) and a short description. Most customers don't know \
@@ -59,7 +77,20 @@ customer (e.g. "Is water actively leaking right now?"). Otherwise null.
 who will get this job, describing only what is visible: the fixture and room, pipe and \
 fitting materials (PVC, copper, PEX, chrome, galvanized), visible sizes, where the water, \
 damage or clog is, and anything that changes the job (corrosion, cramped access, shutoff \
-valve visible or not). Don't guess at what you can't see. Null if there is no photo."""
+valve visible or not). Don't guess at what you can't see. Null if there is no photo.
+- safety_instruction: only if there is danger or damage happening right now (water \
+actively leaking or spraying, flooding, sewage backing up, a leaking water heater), one \
+or two short, calm sentences telling the customer what to do before the plumber arrives, \
+starting with "While you wait:". If water is actively leaking, spraying or flooding, \
+always start with stopping the water: close the shutoff valve under that fixture (turn \
+clockwise), or the main shutoff where the water line enters the house. Other safe steps: \
+turn off power or gas to a leaking water heater, stop using drains during a backup, move \
+valuables away from water. Never suggest repairs. Null when nothing urgent is happening.
+- history_note: if earlier jobs for this customer are listed, and one is plausibly related \
+(same fixture or room, the same problem coming back, work we did recently), one short \
+sentence for the technician that says which earlier job and when, using only what the \
+list says (don't invent what was done), e.g. "Repeat customer: we had a water heater job \
+here on Jan 14 (tech Sam), possibly the same unit." Null if no earlier job is relevant."""
 
 
 class _IntakePart(BaseModel):
@@ -75,6 +106,8 @@ class IntakeResult(BaseModel):
     clear_enough: bool
     follow_up_question: Optional[str] = None
     photo_description: Optional[str] = None
+    safety_instruction: Optional[str] = None
+    history_note: Optional[str] = None
 
 
 # ---------- image loading ----------
@@ -108,7 +141,8 @@ def _load_image(photo_url: Optional[str]) -> Optional[tuple[str, bytes]]:
 
 # ---------- LLM call ----------
 
-def _call_llm(model: str, image: Optional[tuple[str, bytes]], text: str) -> IntakeResult:
+def _call_llm(model: str, image: Optional[tuple[str, bytes]], text: str,
+              history: Optional[list[str]] = None) -> IntakeResult:
     from google import genai
     from google.genai import types
 
@@ -118,7 +152,10 @@ def _call_llm(model: str, image: Optional[tuple[str, bytes]], text: str) -> Inta
     if image:
         mime_type, data = image
         contents.append(types.Part.from_bytes(data=data, mime_type=mime_type))
-    contents.append(f"Customer text: {text or '(no text)'}" + ("" if image else "\n(No photo was attached.)"))
+    prompt = f"Customer text: {text or '(no text)'}" + ("" if image else "\n(No photo was attached.)")
+    if history:
+        prompt += "\n\nEarlier jobs for this customer (oldest first):\n" + "\n".join(f"- {h}" for h in history)
+    contents.append(prompt)
 
     resp = client.models.generate_content(
         model=model,
@@ -175,6 +212,49 @@ def _keyword_triage(text: str) -> Optional[IntakeResult]:
     return None
 
 
+# ---------- customer memory ----------
+
+def _customer_history(phone: str, current_job_id: Optional[str]) -> tuple[list[str], Optional[Location]]:
+    """Earlier jobs for this phone number as short lines for the prompt, plus the most recent
+    known location. Never raises: memory is a bonus, not a dependency."""
+    if not phone:
+        return [], None
+    try:
+        rows = [r for r in db.list_customer_jobs(phone) if r.get("id") != current_job_id and r.get("issue")]
+    except Exception as e:
+        log_event(current_job_id, "intake", f"couldn't read customer history: {e.__class__.__name__}")
+        return [], None
+    lines, location = [], None
+    for r in rows[-MAX_HISTORY_JOBS:]:
+        try:
+            when = datetime.fromisoformat(str(r["created_at"])).strftime("%b %d, %Y")
+        except (KeyError, ValueError):
+            when = "earlier"
+        tech = ""
+        if r.get("assigned_tech_id"):
+            t = db.get_tech(r["assigned_tech_id"])
+            tech = f", tech {t.name}" if t else ""
+        lines.append(f"{when}: {r['issue']} ({r.get('status', '?')}{tech})")
+        if r.get("location"):
+            location = Location(**r["location"])
+    return lines, location
+
+
+def _fallback_history_note(history: list[str]) -> Optional[str]:
+    if not history:
+        return None
+    return f"Repeat customer: {len(history)} earlier job(s), most recent {history[-1]}."
+
+
+def _safety_instruction(result: IntakeResult, text: str, used_llm: bool) -> Optional[str]:
+    t = (text or "").lower()
+    if result.trade == "gas" or any(w in t for w in GAS_WORDS):
+        return GAS_SAFETY  # always the fixed text, never the model's wording
+    if used_llm:
+        return result.safety_instruction or None
+    return FALLBACK_SAFETY.get(result.trade) if result.urgency == "high" else None
+
+
 # ---------- entry point ----------
 
 def intake(photo_url: Optional[str], text: str, *, customer_phone: str = "",
@@ -188,6 +268,10 @@ def intake(photo_url: Optional[str], text: str, *, customer_phone: str = "",
     except Exception as e:
         log_event(log_id, "intake", f"couldn't load photo ({e.__class__.__name__}), triaging from text only")
 
+    history, last_location = _customer_history(customer_phone, job_id)
+    if history:
+        log_event(log_id, "intake", f"repeat customer: {len(history)} earlier job(s)")
+
     result: Optional[IntakeResult] = None
     path = "vision" if image else "text-only"
     used_model = None
@@ -195,7 +279,7 @@ def intake(photo_url: Optional[str], text: str, *, customer_phone: str = "",
     if os.getenv("GEMINI_API_KEY"):
         for model in GEMINI_MODELS:  # on any failure (overloaded, timeout, bad output) try the next model
             try:
-                result = _call_llm(model, image, text)
+                result = _call_llm(model, image, text, history)
                 used_model = model
                 break
             except (ValidationError, ValueError) as e:
@@ -227,6 +311,9 @@ def intake(photo_url: Optional[str], text: str, *, customer_phone: str = "",
         parts=[Part(name=p.name, confidence=min(1.0, max(0.0, p.confidence))) for p in result.parts],
         follow_up_question=follow_up,
         photo_description=(result.photo_description or None) if image else None,
+        history_note=(result.history_note or None) if used_model else _fallback_history_note(history),
+        safety_instruction=_safety_instruction(result, text, used_llm=used_model is not None),
+        location=last_location,
     )
     model_note = f"{used_model}, {latency:.1f}s" if path in ("vision", "text-only") else "no LLM"
     log_event(job.id, "intake",
@@ -234,4 +321,8 @@ def intake(photo_url: Optional[str], text: str, *, customer_phone: str = "",
               f"{len(job.parts)} likely parts" + (f"; asking: {follow_up!r}" if follow_up else ""))
     if job.photo_description:
         log_event(job.id, "intake", f"photo: {job.photo_description}")
+    if job.history_note:
+        log_event(job.id, "intake", f"memory: {job.history_note}")
+    if job.safety_instruction:
+        log_event(job.id, "intake", f"safety: {job.safety_instruction}")
     return job

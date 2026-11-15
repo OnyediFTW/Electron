@@ -46,6 +46,16 @@ def _facts(job: Job, tech, accepted: bool) -> str:
         lines.append("Likely parts: none identified")
     lines.append(f"Quote for the customer: ${job.quote.low:.0f}-${job.quote.high:.0f}" if job.quote
                  else "Quote: not available yet")
+    if job.prep:  # research from agents/job_prep.py (model knowledge, estimates)
+        for c in job.prep.get("causes", []):
+            lines.append(f"Likely cause ({c['likelihood']:.0%}): {c['cause']}; confirm by: {c['confirm']}")
+        for p in job.prep.get("parts_plan", []):
+            lines.append(f"Recommended part: {p['pick']} for the {p['part']} (est. ${p['est_low']:.0f}-{p['est_high']:.0f}, "
+                         f"{p['buy']}; {p['why']}" + (f"; skip {p['avoid']}" if p.get("avoid") else "") + ")")
+        if job.prep.get("tools"):
+            lines.append(f"Tools to bring: {', '.join(job.prep['tools'])}")
+        if job.prep.get("watch_out"):
+            lines.append(f"Watch out: {' '.join(job.prep['watch_out'])}")
     if job.location:
         lines.append(f"Distance from the plumber: {miles((job.location.lat, job.location.lng), (tech.lat, tech.lng)):.1f} mi")
         lines.append(f"Directions link (approximate customer location, no street address yet): {maps_link(job)}")

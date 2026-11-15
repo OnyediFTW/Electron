@@ -77,6 +77,17 @@
   .line .mt { grid-column: 2 / -1; font-size: 13px; color: var(--muted); }
   .ev { display: grid; grid-template-columns: 80px 84px minmax(0, 1fr); gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--rule); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
   .ev .a { font: 600 12px 'IBM Plex Mono', monospace; color: var(--muted); text-transform: uppercase; }
+  #prep { margin-bottom: 22px; }
+  #prep .sum { font-size: 17px; margin: 0 0 12px; }
+  #prep h3 { margin: 14px 0 6px; font: 600 12px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  #prep ol, #prep ul { margin: 0; padding-left: 20px; }
+  #prep li { margin-bottom: 8px; }
+  #prep .fine { font-size: 13px; color: var(--muted); }
+  .econ { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; border: 1px solid var(--rule); border-radius: 4px; padding: 10px 12px; }
+  .econ .l { display: block; font-size: 12px; color: var(--muted); }
+  .econ b { font: 600 18px 'IBM Plex Mono', monospace; }
+  .econ b.m { color: var(--ok); }
+  .flagline { color: var(--flag); font-weight: 600; margin: 8px 0 0; }
   #phones { margin: -24px; }
   #phonesFrame { display: block; width: 100%; height: calc(100vh - 112px); min-height: 520px; border: 0; background: #4B5259; }
   @media (max-width: 560px) { main { padding: 16px; } .report { font-size: 18px; } .ev { grid-template-columns: 1fr; gap: 2px; } }
@@ -114,7 +125,7 @@
   <section id="ledger" role="tabpanel" class="hidden">
     <div class="ledger">
       <div><h2>Every job</h2><div id="joblist"></div></div>
-      <div><h2 id="traceTitle">What happened</h2><div id="trace" class="blank">Pick a job to see each step, in order.</div></div>
+      <div><div id="prep"></div><h2 id="traceTitle">What happened</h2><div id="trace" class="blank">Pick a job to see each step, in order.</div></div>
     </div>
   </section>
 </main>
@@ -198,6 +209,8 @@ async function loadLedger() {
       <span>${esc(j.issue || (j.raw_text || "").split("\n")[0] || "(no description)")}</span><span class="st">${esc(j.status)}</span>
       <span class="mt">${esc(who(j.customer_phone))}${j.assigned_tech_name ? " · " + esc(j.assigned_tech_name) : ""}${j.quote ? " · " + money(j.quote) : ""}</span>
     </button>`).join("") : `<div class="blank">No jobs yet.</div>`;
+  const sj = jobs.find(j => j.id === selected);
+  $("prep").innerHTML = sj && sj.prep ? prepHTML(sj.prep) : "";
   if (selected) {
     const evs = await getJSON(`/api/jobs/${encodeURIComponent(selected)}/events`);
     let rk = { lines: [] };
@@ -214,6 +227,22 @@ async function loadLedger() {
 function loadPhones() {  // the phones page polls itself; load it once, the first time the tab opens
   const f = $("phonesFrame");
   if (!f.src) f.src = f.dataset.src;
+}
+
+function prepHTML(p) {
+  const e = p.economics;
+  const money = e ? `<div class="econ">
+      <div><span class="l">Customer pays</span><b>$${e.quote_low}–${e.quote_high}</b></div>
+      <div><span class="l">Tech wages</span><b>$${e.labor_cost_low}–${e.labor_cost_high}</b></div>
+      <div><span class="l">Parts</span><b>$${e.parts_cost_low}–${e.parts_cost_high}</b></div>
+      <div><span class="l">Margin</span><b class="m">${[e.margin_low, e.margin_high].map(v => v < 0 ? `−$${-v}` : `$${v}`).join(" to ")}</b></div>
+    </div>${e.margin_low < 0 ? `<p class="flagline">The low end of the quote ($${e.quote_low}) doesn't cover the cost. Consider quoting at least $${e.quote_low - e.margin_low}.</p>` : ""}
+    <p class="fine">${esc(e.basis)}</p>` : "";
+  return `<h2>Job prep</h2><p class="sum">${esc(p.summary)}</p>${money}
+    <h3>Check first</h3><ol>${p.causes.map(c => `<li><b>${esc(c.cause)}</b> <span class="fine">${Math.round(c.likelihood * 100)}%</span><br>${esc(c.confirm)}</li>`).join("")}</ol>
+    <h3>Parts plan</h3><ul>${p.parts_plan.map(x => `<li><b>${esc(x.pick)}</b> for the ${esc(x.part)} · ~$${Math.round(x.est_low)}–${Math.round(x.est_high)} · ${esc(x.buy)}<br><span class="fine">${esc(x.why)}${x.avoid ? " Skip: " + esc(x.avoid) : ""}</span></li>`).join("")}</ul>
+    ${p.tools.length ? `<p><b>Bring:</b> ${p.tools.map(esc).join(", ")}</p>` : ""}
+    <p class="fine">${esc(p.source)}${p.sent_to ? " · sent to the tech" : ""}</p>`;
 }
 
 const loaders = { today: loadToday, crew: loadCrew, ledger: loadLedger, phones: loadPhones };
