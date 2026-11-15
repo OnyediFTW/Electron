@@ -145,7 +145,8 @@ def list_messages(since: Optional[str] = None) -> list[dict]:
 # ---------- jobs ----------
 
 def insert_job(job: Job) -> Job:
-    store.insert("jobs", job.model_dump(mode="json", exclude={"follow_up_question", "photo_description", "prep"}))
+    store.insert("jobs", job.model_dump(mode="json", exclude={
+        "follow_up_question", "photo_description", "prep", "history_note", "safety_instruction"}))
     return job
 
 
@@ -158,11 +159,17 @@ def list_jobs() -> list[Job]:
     return [Job(**r) for r in store.select("jobs")]
 
 
+def list_customer_jobs(phone: str) -> list[dict]:
+    """Raw job rows for one customer, oldest first (rows keep created_at, which Job drops)."""
+    return sorted(store.select("jobs", customer_phone=phone), key=lambda r: str(r.get("created_at", "")))
+
+
 def update_job_fields(job_id: str, **fields: Any) -> None:
     """Triage fields (B) and assignment (A). NOT status: use messaging.state.advance()."""
     if "status" in fields:
         raise ValueError("status changes go through messaging.state.advance()")
     fields.pop("follow_up_question", None)
+    fields.pop("safety_instruction", None)
     store.update("jobs", job_id, {k: _jsonable(v) for k, v in fields.items()})
 
 

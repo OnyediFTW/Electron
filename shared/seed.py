@@ -4,6 +4,8 @@ Usage: python -m shared.seed            (adds techs if empty; refreshes descript
        python -m shared.seed --reset    (wipes all job data and techs first)
 
 TECH_PHONE_1 / TECH_PHONE_2 in .env are teammates' real phones so the demo buzzes.
+If DEMO_CUSTOMER_PHONE is set, that customer also gets one past job (Person B) so the
+customer-memory feature has history to show.
 """
 import os
 import sys
@@ -30,10 +32,47 @@ DEMO_TECHS = [
 ]
 
 
+# Person B: one finished job for the demo customer, from last summer.
+DEMO_PAST_JOB = {
+    "raw_text": "pipe under my kitchen sink is dripping",
+    "trade": "plumbing",
+    "issue": "leaking P-trap under kitchen sink",
+    "urgency": "high",
+    "parts": [{"name": "1-1/2 in P-trap kit", "confidence": 0.7, "url": None, "price": 8.97}],
+    "status": "booked",
+    "quote": {"low": 85.0, "high": 210.0},
+    "created_at": "2026-08-12T14:30:00+00:00",
+    "tech_name": "Marco Ruiz",
+}
+
+
+def seed_demo_history() -> None:
+    """Give DEMO_CUSTOMER_PHONE one past job so memory shows up in the demo. Safe to re-run."""
+    phone = os.getenv("DEMO_CUSTOMER_PHONE", "").strip()
+    if not phone or db.list_customer_jobs(phone):
+        return
+    job = {k: v for k, v in DEMO_PAST_JOB.items() if k != "tech_name"}
+    tech = next((t for t in db.list_techs() if t.name == DEMO_PAST_JOB["tech_name"]), None)
+    raw = os.getenv("DEMO_CUSTOMER_LOCATION", "")
+    try:
+        lat, lng = (float(x) for x in raw.split(","))
+    except ValueError:
+        lat, lng = 40.3431, -74.6551  # downtown Princeton
+    db.store.insert("jobs", {**job, "id": str(uuid4()), "customer_phone": phone,
+                             "assigned_tech_id": tech.id if tech else None,
+                             "location": {"lat": lat, "lng": lng}})
+    print(f"[seed] added a past job for demo customer {phone}")
+
+
 def seed(reset: bool = False) -> None:
     if reset:
         for t in ("events", "offers", "messages", "jobs", "techs"):
             db.store.delete_all(t)
+    _seed_techs()
+    seed_demo_history()
+
+
+def _seed_techs() -> None:
     existing = {t.name: t for t in db.list_techs()}
     if existing:
         updated = 0

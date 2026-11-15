@@ -30,10 +30,12 @@ create table if not exists jobs (
   assigned_tech_id uuid references techs(id),
   quote            jsonb,                          -- {low, high}
   photo_description text,                          -- intake's description of the photo, for techs
+  history_note     text,                           -- intake's note on related past jobs, for techs
   created_at       timestamptz not null default now()
 );
 
 alter table jobs add column if not exists photo_description text;
+alter table jobs add column if not exists history_note text;
 
 create table if not exists offers (
   id       uuid primary key default gen_random_uuid(),
