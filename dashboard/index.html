@@ -200,8 +200,13 @@ async function loadLedger() {
     </button>`).join("") : `<div class="blank">No jobs yet.</div>`;
   if (selected) {
     const evs = await getJSON(`/api/jobs/${encodeURIComponent(selected)}/events`);
+    let rk = { lines: [] };
+    try { rk = await getJSON(`/api/owner/jobs/${encodeURIComponent(selected)}/ranking`); } catch (e) {}
+    const rankHtml = rk.lines.length
+      ? `<div class="ev"><span class="a">ranking</span><span class="a"></span><span><b>Plumbers ranked for this job</b><br>${rk.lines.map(l => esc(l)).join("<br>")}</span></div>`
+      : "";
     $("trace").classList.remove("blank");
-    $("trace").innerHTML = evs.map(e => `<div class="ev"><span class="a">${new Date(e.created_at).toLocaleTimeString([], {hour: "numeric", minute: "2-digit", second: "2-digit"})}</span>
+    $("trace").innerHTML = rankHtml + evs.filter(e => e.agent !== "ranking").map(e => `<div class="ev"><span class="a">${new Date(e.created_at).toLocaleTimeString([], {hour: "numeric", minute: "2-digit", second: "2-digit"})}</span>
       <span class="a">${esc(e.agent)}</span><span>${esc(e.message)}</span></div>`).join("") || "No steps logged yet.";
   }
 }
