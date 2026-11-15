@@ -104,7 +104,8 @@ def api_ranking(after: str | None = None):
     """The newest job's matching for the ranking board on /phones: each scored plumber, the points
     each factor gave them (recomputed from rank_techs' reasons with its own weights), and what
     happened to their offer. Names only, no phone numbers: the tunnel makes this public."""
-    from matching.rank import FAIR_SHARE_STEP, HORIZON_HOURS, MAX_MILES, URGENT_FREE_MULTIPLIER, WEIGHTS
+    from matching.rank import (FAIR_SHARE_STEP, GENERALIST_COVERS, GENERALIST_SKILL, HORIZON_HOURS, MAX_MILES,
+                               URGENT_FREE_MULTIPLIER, WEIGHTS)
 
     rows = [r for r in db.store.select("jobs") if not after or str(r.get("created_at") or "") > after]
     if not rows:
@@ -142,7 +143,7 @@ def api_ranking(after: str | None = None):
         d, stars = num(r"([\d.]+) mi away", reasons), num(r"([\d.]+) stars", reasons)
         hrs, n_open = num(r"free in (\d+)h", reasons), num(r"(\d+) jobs? today", reasons)
         points = {
-            "skill": w["skill"],
+            "skill": w["skill"] * (GENERALIST_SKILL if "general plumber" in reasons else 1),
             "distance": w["distance"] * max(0.0, 1 - d / MAX_MILES) if d is not None else 0.0,
             "free": w["free"] * max(0.0, 1 - hrs / HORIZON_HOURS) if hrs is not None else 0.0,
             "rating": w["rating"] * (stars or 0) / 5,
@@ -165,8 +166,18 @@ def api_ranking(after: str | None = None):
         techs.append({
             "name": name, "score": score, "state": state,
             "points": {k: round(v, 1) for k, v in points.items()},
-            "facts": {"miles": d, "stars": stars, "free_in_h": hrs, "jobs_today": n_open},
+            "facts": {"miles": d, "stars": stars, "free_in_h": hrs, "jobs_today": n_open,
+                      "generalist": "general plumber" in reasons},
         })
+    # Techs the ranker left out (no skill for this trade), so the board answers "where is X?"
+    ranked_names = {t["name"] for t in techs}
+    trade = job.get("trade")
+    for t in by_name.values():
+        if t.name not in ranked_names and trade:
+            covers = trade in GENERALIST_COVERS and "plumbing" in t.skills
+            if trade not in t.skills and not covers:
+                techs.append({"name": t.name, "score": None, "state": f"no {trade.replace('_', ' ')} skill",
+                              "points": {}, "facts": {}})
     return {"job": info, "techs": techs, "weights": w}
 
 

@@ -257,6 +257,7 @@ let sessionStart = null, rankKey = "";
 
 function factsLine(f) {
   const out = [];
+  if (f.generalist) out.push("general plumber");
   if (f.miles != null) out.push(`${f.miles} mi`);
   if (f.stars != null) out.push(`${f.stars}★`);
   out.push(f.free_in_h != null ? `free in ${f.free_in_h}h` : "no openings");
@@ -282,6 +283,13 @@ function renderRanking(r) {
   }
   const max = Object.values(w).reduce((a, b) => a + b, 0) || 100;
   rows.replaceChildren(...r.techs.map((t, i) => {
+    if (t.score == null) {  // left out before scoring: lacks the skill for this kind of job
+      const row = el("div", "row out");
+      const l1 = el("div", "l1");
+      l1.append(el("span", "rank", "–"), el("span", "who", t.name), el("span", "pill skip", t.state));
+      row.append(l1);
+      return row;
+    }
     const row = el("div", "row");
     const [cls, label] = PILL[t.state] || ["", t.state];
     if (["offered", "took it", "booked"].includes(t.state)) row.classList.add("lead");

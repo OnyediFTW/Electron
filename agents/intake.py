@@ -54,7 +54,8 @@ part names, so work out what is actually broken.
 
 Return:
 - trade: plumbing | drain | water_heater | gas | sewer | electrical.
-  drain = clogs and slow drains. water_heater = tank or tankless heaters. sewer = main \
+  drain = clogs and slow drains ONLY. A leak from any pipe, trap, joint or fitting is \
+plumbing, even on a drain line (a leaking P-trap is plumbing, a clogged P-trap is drain). water_heater = tank or tankless heaters. sewer = main \
 line backups. gas = gas lines or smell of gas. plumbing = everything else with water \
 supply, fixtures, traps, valves. Anything that is not plumbing (outlets, wiring, \
 breakers) is electrical.
