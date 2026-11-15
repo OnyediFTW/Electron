@@ -9,3 +9,5 @@ psycopg[binary]>=3.2
 google-genai>=1.0
 pillow>=10.0
 pillow-heif>=0.16
+google-api-python-client
+google-auth
