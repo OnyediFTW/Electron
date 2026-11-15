@@ -91,6 +91,17 @@
   .f-skill { background: #1E2328; } .f-distance { background: #2563EB; } .f-free { background: #CF7742; }
   .f-rating { background: #C9A64B; } .f-workload { background: #7A8590; }
 
+  /* What the AI read in a photo: a label-maker strip stuck on the picture */
+  .shot { position: relative; align-self: flex-end; width: 176px; margin: 0; animation: pop .25s ease-out; }
+  .shot .photo { width: 100%; }
+  .shot .tag { position: absolute; left: 6px; right: 6px; bottom: 6px; display: none; padding: 4px 7px; border-radius: 2px;
+    background: var(--tape); color: #fff; font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600;
+    line-height: 1.3; letter-spacing: .03em; box-shadow: 0 1px 3px rgba(0,0,0,.35); }
+  .shot .tag.on { display: block; animation: pop .3s ease-out; }
+  .skills { margin: 3px 0 0 28px; display: flex; flex-wrap: wrap; gap: 4px; }
+  .skills span { font-size: 10.5px; color: #3D434A; background: #ECEEF1; border-radius: 3px; padding: 1px 6px; }
+  .skills span.match { background: #DCE5FB; color: #1C3E9E; font-weight: 600; }
+
   .foot { font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: var(--ink-2); }
   .live { display: inline-flex; align-items: center; gap: 8px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: #7BD88F; box-shadow: 0 0 0 3px rgba(123,216,143,.25); }
@@ -214,7 +225,15 @@ function flash(id) {
 }
 
 
+function applyPhotoLabels(labels) {
+  for (const shot of document.querySelectorAll(".shot[data-key]")) {
+    const label = labels && labels[shot.dataset.key], tag = shot.querySelector(".tag");
+    if (label && tag.textContent !== label) { tag.textContent = label; tag.classList.add("on"); }
+  }
+}
+
 function render(data) {
+  applyPhotoLabels(data.photo_labels);
   for (const p of data.phones) {
     if (!(p.role in LEFT)) continue;
     const node = slotFor(p);
@@ -240,7 +259,13 @@ function render(data) {
       const mine = m.direction === "in";  // "in" = this person texted Electron
       // Load photos from this page's own server: the public (ngrok) URL shows a browser warning page instead.
       const src = m.photo_url ? m.photo_url.replace(/^https?:\/\/[^/]+(?=\/photos\/)/, "") : null;
-      if (src) thread.appendChild(Object.assign(document.createElement("img"), { className: "photo", src, alt: "Photo sent by the customer" }));
+      if (src) {
+        const shot = el("figure", "shot");
+        shot.dataset.key = src;
+        shot.append(Object.assign(document.createElement("img"), { className: "photo", src, alt: "Photo sent by the customer" }),
+                    el("figcaption", "tag"));
+        thread.appendChild(shot);
+      }
       if (m.text) { const b = el("div", "b " + (mine ? "mine" : "theirs")); b.innerHTML = md(m.text); thread.appendChild(b); }
       flash(p.role === "tech" ? "pipeC" : p.role === "backup" ? "pipeD" : mine ? "pipeA" : "pipeB");
     }
@@ -254,6 +279,14 @@ const FACTORS = [["skill", "Skill"], ["distance", "Distance"], ["free", "Free ti
 const PILL = { "offered": ["offered", "Offered"], "took it": ["took", "Took it"], "booked": ["booked", "Booked"],
   "passed": ["passed", "Passed"], "no reply": ["noreply", "No reply"], "not on iMessage": ["skip", "Not on iMessage"], "in line": ["", "In line"] };
 let sessionStart = null, rankKey = "";
+
+const SKILL_NAME = { plumbing: "Plumbing", drain: "Drains", water_heater: "Water heaters", sewer: "Sewer",
+  gas: "Gas lines", electrical: "Electrical", painting: "Painting" };
+function skillTags(skills, trade) {
+  const box = el("div", "skills");
+  for (const k of skills || []) box.appendChild(el("span", k === trade ? "match" : "", SKILL_NAME[k] || k.replace(/_/g, " ")));
+  return box;
+}
 
 function factsLine(f) {
   const out = [];
@@ -282,12 +315,13 @@ function renderRanking(r) {
     return;
   }
   const max = Object.values(w).reduce((a, b) => a + b, 0) || 100;
+  const trade = r.job && r.job.trade;
   rows.replaceChildren(...r.techs.map((t, i) => {
     if (t.score == null) {  // left out before scoring: lacks the skill for this kind of job
       const row = el("div", "row out");
       const l1 = el("div", "l1");
       l1.append(el("span", "rank", "–"), el("span", "who", t.name), el("span", "pill skip", t.state));
-      row.append(l1);
+      row.append(l1, skillTags(t.skills, trade));
       return row;
     }
     const row = el("div", "row");
@@ -305,7 +339,7 @@ function renderRanking(r) {
     }
     const facts = el("div", "facts");
     facts.append(el("span", "", factsLine(t.facts)), el("span", `pill ${cls}`, label));
-    row.append(l1, bar, facts);
+    row.append(l1, skillTags(t.skills, trade), bar, facts);
     return row;
   }));
 }

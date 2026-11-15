@@ -1,7 +1,7 @@
 """Electron backend. Run: uvicorn main:app --reload --port 8000"""
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -93,7 +93,20 @@ def api_threads(since: str | None = None):
         first = names.get(p, "tech").split()[0]
         role, label = ("tech" if i == 0 else "backup"), f"Plumber · {first}"  # equals; the board ranks them
         phones.append({**thread(role, label, p), "key": first})
-    return {"server_time": now, "phones": phones}
+    return {"server_time": now, "phones": phones, "photo_labels": _photo_labels()}
+
+
+def _photo_labels() -> dict[str, str]:
+    """{"/photos/<id>": "AI read: leaking P-trap under kitchen sink · urgent"} for jobs from the last
+    12 hours, so the phones page can tag each customer photo once intake has read it."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=12)).isoformat()
+    out = {}
+    for j in db.store.select("jobs"):
+        url, issue = j.get("photo_url") or "", j.get("issue")
+        if "/photos/" in url and issue and str(j.get("created_at") or "") >= cutoff:
+            out["/photos/" + url.split("/photos/", 1)[1]] = (
+                f"AI read: {issue}" + (" · urgent" if j.get("urgency") == "high" else ""))
+    return out
 
 
 _RANK_LINE = re.compile(r"^\d+\.\s+(.+?)\s{2,}([\d.]+)\s{2,}\((.*)\)$")
@@ -116,7 +129,8 @@ def api_ranking(after: str | None = None):
     urgent = job.get("urgency") == "high"
     w = {**WEIGHTS, "free": WEIGHTS["free"] * (URGENT_FREE_MULTIPLIER if urgent else 1)}
     info = {"issue": job.get("issue") or "Reading the photo…", "urgency": job.get("urgency"),
-            "status": job["status"], "weights": w, "urgent_boost": URGENT_FREE_MULTIPLIER if urgent else None}
+            "status": job["status"], "trade": job.get("trade"), "weights": w,
+            "urgent_boost": URGENT_FREE_MULTIPLIER if urgent else None}
     if not ranking:
         return {"job": info, "techs": [], "weights": w}
 
@@ -164,7 +178,7 @@ def api_ranking(after: str | None = None):
         else:
             state = "in line"
         techs.append({
-            "name": name, "score": score, "state": state,
+            "name": name, "score": score, "state": state, "skills": t.skills if t else [],
             "points": {k: round(v, 1) for k, v in points.items()},
             "facts": {"miles": d, "stars": stars, "free_in_h": hrs, "jobs_today": n_open,
                       "generalist": "general plumber" in reasons},
@@ -177,7 +191,7 @@ def api_ranking(after: str | None = None):
             covers = trade in GENERALIST_COVERS and "plumbing" in t.skills
             if trade not in t.skills and not covers:
                 techs.append({"name": t.name, "score": None, "state": f"no {trade.replace('_', ' ')} skill",
-                              "points": {}, "facts": {}})
+                              "skills": t.skills, "points": {}, "facts": {}})
     return {"job": info, "techs": techs, "weights": w}
 
 
