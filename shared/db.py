@@ -145,7 +145,7 @@ def list_messages(since: Optional[str] = None) -> list[dict]:
 # ---------- jobs ----------
 
 def insert_job(job: Job) -> Job:
-    store.insert("jobs", job.model_dump(mode="json", exclude={"follow_up_question", "photo_description"}))
+    store.insert("jobs", job.model_dump(mode="json", exclude={"follow_up_question", "photo_description", "prep"}))
     return job
 
 

@@ -75,6 +75,8 @@ class Job(BaseModel):
     follow_up_question: Optional[str] = None
     # Set by intake() when there's a photo: what the vision model sees, for the tech's offer text.
     photo_description: Optional[str] = None
+    # Set by agents/job_prep.py after triage: causes, tools, parts plan, owner economics.
+    prep: Optional[dict] = None
 
 
 class Tech(BaseModel):

@@ -16,7 +16,7 @@ import re
 import threading
 from datetime import datetime, timezone
 
-from agents import find_parts, intake, quote
+from agents import find_parts, intake, job_prep, quote
 from matching import book, free_slots, rank_techs
 from messaging import ai_router, photon, tech_assistant
 from messaging.send import send_text
@@ -167,9 +167,34 @@ def _triage(job: Job) -> None:
             advance(job.id, JobStatus.triaged)
             send_text(job.customer_phone, "Got it, finding a plumber for you now.", job_id=job.id)
             offer_next(job.id)
+        # Research the job while techs decide, so the prep is ready when someone says YES.
+        threading.Thread(target=_run_prep, args=(job.id,), daemon=True).start()
     finally:
         with _dispatch_lock:
             _triaging.discard(job.id)
+
+
+def _run_prep(job_id: str) -> None:
+    try:
+        prep = job_prep.prepare(db.get_job(job_id))
+        if prep:
+            with _dispatch_lock:
+                db.update_job_fields(job_id, prep=prep)
+            _maybe_send_prep(job_id)
+    except Exception as e:
+        db.log_event(job_id, "error", f"job prep failed: {e!r}")
+
+
+def _maybe_send_prep(job_id: str) -> None:
+    """Text the prep to the tech who took the job, once: on accept if it's ready, else when it's done."""
+    with _dispatch_lock:
+        job = db.get_job(job_id)
+        if not job or not job.prep or job.prep.get("sent_to") or not job.assigned_tech_id \
+                or job.status not in (JobStatus.accepted, JobStatus.booked):
+            return
+        tech = db.get_tech(job.assigned_tech_id)
+        db.update_job_fields(job_id, prep={**job.prep, "sent_to": tech.id})
+    send_text(tech.phone, job_prep.tech_message(job, job.prep), job_id=job_id, markdown=True)
 
 
 def handle_customer_followup(job: Job, text: str, photo_url: str | None) -> Job | None:
@@ -350,6 +375,7 @@ def _accept(offer: Offer, tech, how: str) -> None:
     db.update_job_fields(offer.job_id, assigned_tech_id=tech.id)
     advance(offer.job_id, JobStatus.accepted, f"{tech.name} {how}")
     _schedule(offer.job_id, tech.id)
+    _maybe_send_prep(offer.job_id)
 
 
 def _decline(offer: Offer, tech, how: str) -> None:
