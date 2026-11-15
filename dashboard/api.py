@@ -72,8 +72,8 @@ def board():
             pending = [o for o in offers if o["job_id"] == j["id"] and not o.get("response")]
             card["offered_to"] = names.get(pending[-1]["tech_id"]) if pending else None
             cols["offered"].append(card)
-        elif s in WORKING:
-            cols["taken"].append(card)
+        elif s == "accepted" or (s in WORKING and (_ts(j.get("created_at")) or now) >= day_ago):
+            cols["taken"].append(card)  # active jobs, plus jobs confirmed in the last 24 h
         elif s == "failed" and (_ts(j.get("created_at")) or now) >= day_ago:
             cols["dropped"].append(card)
     return cols
