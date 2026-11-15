@@ -4,22 +4,27 @@ Matching is an algorithm, not an LLM call. Keep the weights here, in one dict,
 and return human-readable reasons that go straight into the tech's offer text.
 
 Score = weighted sum of: skill, distance, rating, availability (next 48h),
-and workload (open jobs). High-urgency jobs weight availability more.
+and fair share (jobs taken in the last 24h + offers waiting on them now), so work is
+spread evenly: after a plumber takes a job, the next one leans to someone else.
+High-urgency jobs weight availability more.
 """
 import math
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from matching.calendar import free_slots
-from shared.db import list_jobs, list_techs, log_event
+from shared import db
+from shared.db import list_techs, log_event
 from shared.schema import Job, JobStatus, RankedTech, Urgency
 
 WEIGHTS = {
     "skill": 30.0,      # has the job's trade
     "distance": 25.0,   # closer is better, 0 at >= MAX_MILES
-    "rating": 15.0,     # 0-5 stars scaled
+    "rating": 10.0,     # 0-5 stars scaled
     "free": 20.0,       # sooner first opening in the next 48h is better
-    "workload": 10.0,   # fewer open jobs is better
+    "workload": 15.0,   # fair share: fewer jobs in the last 24h (and pending offers) is better
 }
+FAIR_SHARE_HOURS = 24.0
+FAIR_SHARE_STEP = 6.0   # points lost per job today: more than the gap between two nearby plumbers
 URGENT_FREE_MULTIPLIER = 1.5   # high urgency leans on availability
 MAX_MILES = 25.0
 HORIZON_HOURS = 48.0
@@ -38,11 +43,19 @@ def rank_techs(job: Job) -> list[RankedTech]:
     if job.urgency == Urgency.high:
         w["free"] *= URGENT_FREE_MULTIPLIER
 
-    # Count each tech's current jobs once, excluding the job being ranked.
+    # Fair share: jobs each tech took in the last 24h, plus offers waiting on them right now
+    # (so two jobs arriving together don't both go to the same person). Not this job.
+    since = datetime.now(timezone.utc) - timedelta(hours=FAIR_SHARE_HOURS)
     open_counts: dict[str, int] = {}
-    for j in list_jobs():
-        if j.id != job.id and j.status in OPEN_STATUSES and j.assigned_tech_id:
-            open_counts[j.assigned_tech_id] = open_counts.get(j.assigned_tech_id, 0) + 1
+    for r in db.store.select("jobs"):
+        created = r.get("created_at")
+        recent = created is None or datetime.fromisoformat(str(created)) >= since
+        if r["id"] != job.id and r.get("assigned_tech_id") and r["status"] in {s.value for s in OPEN_STATUSES} and recent:
+            open_counts[r["assigned_tech_id"]] = open_counts.get(r["assigned_tech_id"], 0) + 1
+    offered_jobs = {r["id"] for r in db.store.select("jobs", status=JobStatus.offered.value) if r["id"] != job.id}
+    for o in db.store.select("offers"):
+        if o["job_id"] in offered_jobs and not o.get("response"):
+            open_counts[o["tech_id"]] = open_counts.get(o["tech_id"], 0) + 1
 
     ranked = []
     for t in list_techs():
@@ -67,12 +80,13 @@ def rank_techs(job: Job) -> list[RankedTech]:
             when = "no openings in 48h"
 
         n_open = open_counts.get(t.id, 0)
-        score += w["workload"] / (1 + n_open)
+        score += max(-w["workload"], w["workload"] - FAIR_SHARE_STEP * n_open)  # keeps rotating past 2 jobs
 
         ranked.append(RankedTech(
             tech_id=t.id,
             score=round(score, 1),
-            reasons=[f"{job.trade} skill", where, f"{t.rating} stars", when, f"{n_open} open jobs"],
+            reasons=[f"{job.trade} skill", where, f"{t.rating} stars", when,
+                     f"{n_open} job{'' if n_open == 1 else 's'} today"],
         ))
     ranked.sort(key=lambda r: r.score, reverse=True)
     names = {t.id: t.name for t in list_techs()}
