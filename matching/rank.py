@@ -24,6 +24,10 @@ WEIGHTS = {
     "workload": 15.0,   # fair share: fewer jobs in the last 24h (and pending offers) is better
 }
 FAIR_SHARE_HOURS = 24.0
+# A general plumber can do drain, water heater and sewer jobs, at part of the skill points,
+# so specialists still rank higher but nobody qualified is left out. Gas and electrical stay strict.
+GENERALIST_COVERS = {"drain", "water_heater", "sewer"}
+GENERALIST_SKILL = 2 / 3
 FAIR_SHARE_STEP = 6.0   # points lost per job today: more than the gap between two nearby plumbers
 URGENT_FREE_MULTIPLIER = 1.5   # high urgency leans on availability
 MAX_MILES = 25.0
@@ -59,9 +63,13 @@ def rank_techs(job: Job) -> list[RankedTech]:
 
     ranked = []
     for t in list_techs():
-        if job.trade and job.trade not in t.skills:
+        if not job.trade or job.trade in t.skills:
+            score, skill = w["skill"], f"{job.trade} skill"
+        elif job.trade in GENERALIST_COVERS and "plumbing" in t.skills:
+            score, skill = w["skill"] * GENERALIST_SKILL, f"general plumber, not a {job.trade} specialist"
+        else:
             continue
-        score = w["skill"] + w["rating"] * t.rating / 5
+        score += w["rating"] * t.rating / 5
 
         if here:
             d = miles(here, (t.lat, t.lng))
@@ -85,7 +93,7 @@ def rank_techs(job: Job) -> list[RankedTech]:
         ranked.append(RankedTech(
             tech_id=t.id,
             score=round(score, 1),
-            reasons=[f"{job.trade} skill", where, f"{t.rating} stars", when,
+            reasons=[skill, where, f"{t.rating} stars", when,
                      f"{n_open} job{'' if n_open == 1 else 's'} today"],
         ))
     ranked.sort(key=lambda r: r.score, reverse=True)
