@@ -40,15 +40,16 @@ def _needs(jobs: list[dict], offers: list[dict], now: datetime) -> dict[str, str
     for j in jobs:
         created = _ts(j.get("created_at")) or now
         if j["status"] == "failed" and created >= day_ago:
-            out[j["id"]] = "No tech took it. Call the customer."
+            out[j["id"]] = ("Customer declined the estimate. Call to win it back?" if j.get("assigned_tech_id")
+                            else "No tech took it. Call the customer.")
         elif j["status"] == "new" and now - created > timedelta(minutes=5):
             out[j["id"]] = "Waiting on the customer's answer for over 5 min."
         elif j["status"] == "offered":
             pending = [o for o in offers if o["job_id"] == j["id"] and not o.get("response")]
             if pending and now - _ts(pending[-1]["sent_at"]) > timedelta(seconds=OFFER_TIMEOUT * 3):
                 out[j["id"]] = "Offer has gone unanswered for a while."
-        elif j["status"] == "accepted" and now - created > timedelta(hours=2):
-            out[j["id"]] = "Taken, but no time set with the customer yet."
+        elif j["status"] == "accepted" and now - created > timedelta(minutes=30):
+            out[j["id"]] = "Customer hasn't OK'd the estimate yet. Follow up?"
     return out
 
 

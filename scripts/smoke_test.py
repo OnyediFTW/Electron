@@ -53,6 +53,12 @@ dispatch.handle_inbound(CUSTOMER, "when can you come?")
 assert len(db.list_jobs()) == 1
 assert any("when can you come?" in t for t in texts_to(second.phone)), texts_to(second.phone)
 
+# The customer was asked to approve the estimate; "ok" books the job and tells the tech.
+assert any("Reply OK to confirm" in t for t in texts_to(CUSTOMER)), texts_to(CUSTOMER)
+dispatch.handle_inbound(CUSTOMER, "ok")
+assert db.get_job(job.id).status == JobStatus.booked, db.get_job(job.id).status
+assert any("Customer approved" in t for t in texts_to(second.phone)), texts_to(second.phone)
+
 # "new job" always starts a fresh job.
 dispatch.handle_inbound(CUSTOMER, "new job: toilet keeps running")
 assert len(db.list_jobs()) == 2, "'new job' should open a second job"
