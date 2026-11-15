@@ -11,6 +11,7 @@ import time
 os.environ["SUPABASE_URL"] = ""  # always run against the in-memory store
 os.environ["PHOTON_API_KEY"] = ""  # never send real iMessages from the smoke test
 os.environ["GEMINI_API_KEY"] = ""  # deterministic: keyword triage + rule-based router (no network)
+os.environ["DEMO_CUSTOMER_PHONE"] = ""  # no seeded past job (B's demo memory) in the test data
 os.environ.setdefault("OFFER_TIMEOUT_SECONDS", "600")
 
 from messaging import dispatch  # noqa: E402

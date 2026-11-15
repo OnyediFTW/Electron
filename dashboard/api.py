@@ -141,3 +141,10 @@ def associates():
     rank = {"on a job": 0, "offer pending": 1, "available": 2}
     out.sort(key=lambda a: (rank[a["state"]], -len(a["customers"]), -a["rating"]))
     return {"incoming": incoming, "associates": out}
+
+
+@router.get("/jobs/{job_id}/ranking")
+def job_ranking(job_id: str):
+    """Latest ranking logged for a job, best first."""
+    evs = [e for e in db.list_events(job_id) if e.get("agent") == "ranking"]
+    return {"lines": evs[-1]["message"].split("\n") if evs else []}

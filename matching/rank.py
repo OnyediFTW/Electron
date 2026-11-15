@@ -75,5 +75,9 @@ def rank_techs(job: Job) -> list[RankedTech]:
             reasons=[f"{job.trade} skill", where, f"{t.rating} stars", when, f"{n_open} open jobs"],
         ))
     ranked.sort(key=lambda r: r.score, reverse=True)
+    names = {t.id: t.name for t in list_techs()}
+    lines = [f"{i}. {names.get(r.tech_id, r.tech_id)}  {r.score}  ({', '.join(r.reasons)})"
+             for i, r in enumerate(ranked[:5], 1)]
+    log_event(job.id, "ranking", "\n".join(lines))
     log_event(job.id, "matching", f"ranked {len(ranked)} techs, top score {ranked[0].score if ranked else '-'}")
     return ranked
