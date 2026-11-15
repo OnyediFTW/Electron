@@ -117,6 +117,22 @@ dispatch._handle_customer_text(CUSTOMER, "the pipes under my sink are leaking",
 assert len(db.list_jobs()) == before + 1, "a photo after booking should open a new job"
 assert db.list_jobs()[-1].status != JobStatus.new, "the new job should have been triaged"
 
+# Start over (live phones page): the customer's next text opens a new job, even with one in progress.
+dispatch.handle_inbound(CUSTOMER, "new job: shower drain is clogged")
+assert db.list_jobs()[-1].status == JobStatus.offered
+before = len(db.list_jobs())
+dispatch.start_over()
+dispatch.handle_inbound(CUSTOMER, "my bathroom faucet is dripping and won't stop")
+assert len(db.list_jobs()) == before + 1, "after Start over the next text should open a new job"
+
+# Part photos for the tech come from live listings that have an image, capped at 3.
+from agents import job_prep  # noqa: E402
+
+fake = {"parts_plan": [{"live": {"image": f"https://x/{i}.jpg", "title": f"Part {i}", "price": 2.5, "store": "Ace"}}
+                       for i in range(5)] + [{"live": None}]}
+assert job_prep.part_photos(fake) == [(f"https://x/{i}.jpg", f"Part {i}: $2.50 at Ace") for i in range(3)]
+assert "&prds=catalogid:42" in job_prep._short_link({"title": "PVC P-Trap 1-1/2 in", "product_id": "42"})
+
 print(f"\nPASS: follow-ups joined the open job, {first.name} declined, {second.name} accepted, "
       f"'new job' opened a second job, workload ranking, restart resume, owner API, "
       f"unreachable techs skipped, photo after booking opens a new job. "

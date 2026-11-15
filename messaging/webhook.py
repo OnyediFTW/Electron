@@ -72,6 +72,14 @@ def photo(attachment_id: str):
     return Response(data, media_type=ctype, headers={"Cache-Control": "public, max-age=3600"})
 
 
+@router.post("/api/start-over")
+def start_over():
+    """Start over on the live phones page: the next customer text opens a fresh job."""
+    from messaging import dispatch
+    dispatch.start_over()
+    return {"ok": True}
+
+
 @router.post("/dev/inbound")
 def dev_inbound(msg: InboundText, bg: BackgroundTasks):
     """Simulate a text without Photon (see README)."""

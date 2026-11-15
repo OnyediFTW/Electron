@@ -144,7 +144,8 @@ const el = (tag, cls, text) => Object.assign(document.createElement(tag), { clas
 // The light Markdown Electron sends (**bold**, bare links), rendered safely: escape first, then format.
 const md = t => String(t).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))
   .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-  .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+  .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+  .replace(/(^|[\s(])(https?:\/\/([^\/\s<]+)[^\s<]*)/g, '$1<a href="$2" target="_blank" rel="noopener">$3</a>');
 
 function slotFor(p) {
   if (slots[p.role]) return slots[p.role];
@@ -224,6 +225,8 @@ async function poll() {
 }
 
 document.getElementById("reset").addEventListener("click", async () => {
+  // Clear the screens, and tell the server the next text is a new request (nothing is deleted).
+  try { await fetch("/api/start-over", { method: "POST" }); } catch (e) {}
   since = null; seen = {};
   setValve(false);
   await poll();

@@ -23,7 +23,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Literal, Optional
-from urllib.parse import quote
+from urllib.parse import quote, quote_plus
 
 import httpx
 from pydantic import BaseModel, Field
@@ -161,11 +161,20 @@ def _usable(item: dict, pick: "PartPick") -> bool:
             and pick.est_low / 4 <= price <= max(pick.est_high * 3, pick.est_high + 15))
 
 
-def _listing(item: dict) -> dict:
+def _short_link(item: dict) -> Optional[str]:
+    """Google Shopping's product page (all stores and prices) in a link short enough for a text.
+    SerpAPI's product_link carries ~400 chars of tracking ids; title + catalog id opens the same page."""
+    if item.get("product_id") and item.get("title"):
+        return ("https://www.google.com/search?ibp=oshop&q=" + quote_plus(item["title"])
+                + "&prds=catalogid:" + str(item["product_id"]))
     link = item.get("product_link") or item.get("link") or ""
+    return quote(link, safe=":/?&=%#+,;@!$'()*") if link else None
+
+
+def _listing(item: dict) -> dict:
     return {"title": item.get("title"), "price": item.get("extracted_price"), "store": item.get("source"),
-            "rating": item.get("rating"), "reviews": item.get("reviews"),
-            "link": quote(link, safe=":/?&=%#+,;@!$'()*") if link else None}
+            "rating": item.get("rating"), "reviews": item.get("reviews"), "link": _short_link(item),
+            "image": item.get("serpapi_thumbnail") or item.get("thumbnail")}
 
 
 MATCH_LABEL = {0: "exact", 1: "same brand", 2: "similar item"}
@@ -299,6 +308,17 @@ def _price_line(p: dict) -> str:
         a = live["alt"]
         line += f"\n  Cheaper online: ${a['price']:.2f} at {a['store']}" + (f" [link]({a['link']})" if a.get("link") else "")
     return line
+
+
+def part_photos(prep: dict, limit: int = 3) -> list[tuple[str, str]]:
+    """(image url, caption) for each part with a live listing, so the tech sees what to grab."""
+    out = []
+    for p in prep.get("parts_plan") or []:
+        live = p.get("live") or {}
+        if live.get("image"):
+            note = "" if live.get("match") in (None, "exact") else " (closest match, check the size)"
+            out.append((live["image"], f"{live['title']}: ${live['price']:.2f} at {live['store']}{note}"))
+    return out[:limit]
 
 
 def tech_message(job: Job, prep: dict) -> str:

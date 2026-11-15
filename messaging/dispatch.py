@@ -129,9 +129,20 @@ def _handle_customer_text(phone: str, text: str, photo_url: str | None, open_job
 
 # ---------- customer flow ----------
 
+_fresh_start = 0.0  # set by "Start over" on /phones: older jobs no longer absorb a customer's texts
+
+
+def start_over() -> None:
+    """The demo's Start over: the next text from any customer starts a new job. Nothing is deleted;
+    jobs already in progress keep running (offers, approvals) and stay on the owner's board."""
+    global _fresh_start
+    _fresh_start = datetime.now(timezone.utc).timestamp()
+    db.log_event(None, "messaging", "Start over: the next customer text opens a new job")
+
+
 def _open_job_for(phone: str) -> Job | None:
     """The customer's newest job that is still in progress and recent, else None."""
-    cutoff = datetime.now(timezone.utc).timestamp() - JOB_WINDOW_HOURS * 3600
+    cutoff = max(datetime.now(timezone.utc).timestamp() - JOB_WINDOW_HOURS * 3600, _fresh_start)
     for row in reversed(db.store.select("jobs", customer_phone=phone)):  # newest first
         created = row.get("created_at")
         if row["status"] in OPEN_STATUSES and created and datetime.fromisoformat(created).timestamp() > cutoff:
@@ -210,6 +221,25 @@ def _maybe_send_prep(job_id: str) -> None:
         tech = db.get_tech(job.assigned_tech_id)
         db.update_job_fields(job_id, prep={**job.prep, "sent_to": tech.id})
     send_text(tech.phone, job_prep.tech_message(job, job.prep), job_id=job_id, markdown=True)
+    for image, caption in job_prep.part_photos(job.prep):
+        _send_part_photo(tech.phone, image, caption, job_id)
+
+
+def _send_part_photo(phone: str, image: str, caption: str, job_id: str) -> None:
+    """A real picture of a part to grab (not a link). Skipped quietly if the image can't be sent."""
+    if photon.configured():
+        try:
+            photon.send_photo(phone, image)
+        except Exception as e:
+            db.log_event(job_id, "outbox", f"part photo skipped for {phone}: {e!r}")
+            return
+    db.log_message(phone, "out", caption, photo_url=image, job_id=job_id)
+    if photon.configured():
+        try:
+            photon.send(phone, caption)
+        except Exception as e:
+            db.log_event(job_id, "outbox", f"SEND FAILED to {phone}: {e!r}")
+    db.log_event(job_id, "outbox", f"part photo sent to {phone}: {caption}")
 
 
 def handle_customer_followup(job: Job, text: str, photo_url: str | None) -> Job | None:
