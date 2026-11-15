@@ -246,8 +246,8 @@ def _triage(job: Job) -> None:
                                  **{k: v for k, v in (("photo_description", triaged.photo_description),
                                                       ("history_note", triaged.history_note)) if v})
             advance(job.id, JobStatus.triaged)
-            welcome = "Welcome back! " if triaged.history_note else ""
-            send_text(job.customer_phone, f"{welcome}Got it, finding a technician for you now.", job_id=job.id)
+            # Past jobs go to the technician (history note in the offer), not into a greeting for the customer.
+            send_text(job.customer_phone, "Got it, finding a technician for you now.", job_id=job.id)
             offer_next(job.id)
         # Research the job while techs decide, so the prep is ready when someone says YES.
         threading.Thread(target=_run_prep, args=(job.id,), daemon=True).start()

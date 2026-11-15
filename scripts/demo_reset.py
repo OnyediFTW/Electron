@@ -3,7 +3,7 @@
 Clears jobs, offers, messages and events (the owner board, the live phones page and every
 trace start empty), plus the "Electron job:" bookings on techs' Google Calendars. Keeps techs and
 Photon contacts, so nobody has to re-text the line.
-Then re-seeds B's demo past job so the "Welcome back" memory still shows.
+Then re-seeds B's demo past job so the technician's offer still shows the repeat-customer history.
 
 Run:  python -m scripts.demo_reset --yes
 Then reload the board and the /phones page (or press Start over there).
