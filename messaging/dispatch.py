@@ -246,8 +246,8 @@ def _triage(job: Job) -> None:
                                  **{k: v for k, v in (("photo_description", triaged.photo_description),
                                                       ("history_note", triaged.history_note)) if v})
             advance(job.id, JobStatus.triaged)
-            welcome = "Welcome back! " if triaged.history_note else ""
-            send_text(job.customer_phone, f"{welcome}Got it, finding a plumber for you now.", job_id=job.id)
+            # Past jobs go to the technician (history note in the offer), not into a greeting for the customer.
+            send_text(job.customer_phone, "Got it, finding a technician for you now.", job_id=job.id)
             offer_next(job.id)
         # Research the job while techs decide, so the prep is ready when someone says YES.
         threading.Thread(target=_run_prep, args=(job.id,), daemon=True).start()
@@ -319,7 +319,7 @@ def handle_customer_followup(job: Job, text: str, photo_url: str | None) -> Job 
         pending = [o for o in db.list_offers(job.id) if o.response is None]
         if pending and (tech := db.get_tech(pending[-1].tech_id)):
             send_text(tech.phone, update, job_id=job.id, photo_url=photo_url)
-        send_text(job.customer_phone, "Thanks, I added that to your request. Still finding a plumber.",
+        send_text(job.customer_phone, "Thanks, I added that to your request. Still finding a technician.",
                   job_id=job.id)
     else:  # accepted / booked: the assigned tech owns it now
         tech = db.get_tech(job.assigned_tech_id) if job.assigned_tech_id else None
@@ -604,7 +604,7 @@ def _confirm(job: Job) -> None:
 def _decline_estimate(job: Job) -> None:
     tech = db.get_tech(job.assigned_tech_id) if job.assigned_tech_id else None
     advance(job.id, JobStatus.failed, "customer declined the estimate")
-    send_text(job.customer_phone, "No problem, I've cancelled it. Text me anytime if you need a plumber.",
+    send_text(job.customer_phone, "No problem, I've cancelled it. Text me anytime if you need a technician.",
               job_id=job.id)
     if tech:
         send_text(tech.phone, "The customer passed on the estimate, so this job is cancelled. "

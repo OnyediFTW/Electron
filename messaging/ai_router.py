@@ -59,17 +59,17 @@ class Route(BaseModel):
 def _context(job: Optional[Job], tech_name: Optional[str], booked_at: Optional[str] = None) -> str:
     if job is None:
         return "No open job. They have not sent us a problem yet."
-    status = {"new": "being looked at by Electron", "triaged": "being matched to a plumber",
-              "offered": "offered to a plumber, waiting for them to accept",
-              "accepted": f"accepted by {tech_name or 'a plumber'}, waiting for the customer to OK the estimate",
-              "booked": f"booked with {tech_name or 'a plumber'}"}
+    status = {"new": "being looked at by Electron", "triaged": "being matched to a technician",
+              "offered": "offered to a technician, waiting for them to accept",
+              "accepted": f"accepted by {tech_name or 'a technician'}, waiting for the customer to OK the estimate",
+              "booked": f"booked with {tech_name or 'a technician'}"}
     lines = [f'Open job: "{job.issue or (job.raw_text or "").split(chr(10))[0][:120] or "a plumbing problem"}"',
              f"Status: {status.get(job.status.value, job.status.value)}"]
     if job.quote:
         lines.append(f"Estimate: ${job.quote.low:.0f}-${job.quote.high:.0f} for labor and parts")
     if job.status.value == "booked":
         lines.append(f"Arrival: {booked_at}" if booked_at
-                     else f"Arrival: not set; {tech_name or 'the plumber'} will text them a time")
+                     else f"Arrival: not set; {tech_name or 'the technician'} will text them a time")
     else:
         lines.append("Arrival: not scheduled yet")
     return "\n".join(lines)

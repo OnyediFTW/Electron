@@ -66,7 +66,7 @@ def rank_techs(job: Job) -> list[RankedTech]:
         if not job.trade or job.trade in t.skills:
             score, skill = w["skill"], f"{job.trade} skill"
         elif job.trade in GENERALIST_COVERS and "plumbing" in t.skills:
-            score, skill = w["skill"] * GENERALIST_SKILL, f"general plumber, not a {job.trade} specialist"
+            score, skill = w["skill"] * GENERALIST_SKILL, f"generalist, not a {job.trade} specialist"
         else:
             continue
         score += w["rating"] * t.rating / 5
