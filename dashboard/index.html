@@ -1,202 +1,219 @@
 <!doctype html>
-<!-- Owner: Person C. Owner's view: summary, associates, jobs + agent trace. Polls the backend. -->
+<!-- Owner: Person C. Owner's view, laid out like a shop T-card planning board. Polls the backend. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Electron Owner View</title>
+<title>Electron Owner Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #EEF0F2; --panel: #FFFFFF; --ink: #15181C; --muted: #5B626B; --line: #D9DDE2;
-    --steel: #2B3036; --hole: #20242A; --copper: #B45A2A; --tape: #2449B8;
-    --s-open: #2449B8; --s-work: #1F7A45; --s-fail: #B42318; --s-wait: #8A5A00;
+    --ground: #F4F5F6; --ink: #17191C; --muted: #5A6068; --rule: #CDD2D8;
+    --rail: #E3E6EA; --rail-line: #D3D8DE; --card: #FFFFFF;
+    --steel: #2B3036; --hole: #20242A; --tape: #2449B8;
+    --t-high: #E4572E; --t-medium: #F2C14E; --t-low: #8CC7A1; --t-none: #C3C9D0;
+    --flag: #B42318; --money: #9A4A1F; --ok: #1F7A45;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #15181C; --panel: #1E2227; --ink: #ECEEF0; --muted: #A3AAB3; --line: #2F343B;
-      --copper: #E08A5A; --tape: #3B63D6; --s-open: #8FA8FF; --s-work: #5FCB8A; --s-fail: #FF8A80; --s-wait: #E8B04A; }
+    :root { --ground: #15181C; --ink: #ECEEF0; --muted: #A3AAB3; --rule: #333941;
+      --rail: #1C2025; --rail-line: #262B31; --card: #262B31; --tape: #3B63D6;
+      --flag: #FF8A80; --money: #F0A070; --ok: #6FD39A; }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 'IBM Plex Sans', system-ui, sans-serif; }
-  header { background-color: var(--steel); background-image: radial-gradient(circle at center, var(--hole) 0 2.5px, transparent 3px); background-size: 24px 24px; color: #F3F4F1; padding: 20px 24px 0; }
-  .brand { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
-  .brand h1 { margin: 0; font: 700 34px/1 'Barlow Condensed', sans-serif; letter-spacing: .02em; text-transform: uppercase; }
-  .brand span { color: #C9CDD2; font-size: 14px; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 15px/1.45 'IBM Plex Sans', system-ui, sans-serif; }
+
+  header { background-color: var(--steel); background-image: radial-gradient(circle at center, var(--hole) 0 2.5px, transparent 3px); background-size: 24px 24px; color: #F3F4F1; padding: 18px 24px 0; }
+  .top { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .top h1 { margin: 0; font: 700 34px/1 'Barlow Condensed', sans-serif; letter-spacing: .02em; text-transform: uppercase; }
+  .top .who { color: #C9CDD2; font-size: 14px; }
   #live { margin-left: auto; font: 500 12px 'IBM Plex Mono', monospace; color: #C9CDD2; display: inline-flex; gap: 8px; align-items: center; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: #7BD88F; }
   .dot.off { background: #E5A15A; }
-  nav { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+  nav { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
   nav button { appearance: none; border: 0; cursor: pointer; background: #3A4048; color: #DADDE0; font: 600 13px 'IBM Plex Mono', monospace; letter-spacing: .16em; text-transform: uppercase; padding: 9px 14px; border-radius: 2px 2px 0 0; }
-  nav button[aria-selected="true"] { background: var(--tape); color: #fff; box-shadow: inset 0 1px 0 rgba(255,255,255,.18); }
-  nav button:focus-visible, .row:focus-visible { outline: 3px solid #FFB27A; outline-offset: 2px; }
-  main { max-width: 1280px; margin: 0 auto; padding: 24px; }
+  nav button[aria-selected="true"] { background: var(--tape); color: #fff; }
+  button:focus-visible { outline: 3px solid #FFB27A; outline-offset: 2px; }
+
+  main { padding: 24px; max-width: 1480px; margin: 0 auto; }
   .hidden { display: none !important; }
-  h2 { margin: 0 0 12px; font: 700 22px/1.1 'Barlow Condensed', sans-serif; letter-spacing: .03em; text-transform: uppercase; }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px; }
-  .muted { color: var(--muted); }
-  .mono { font-family: 'IBM Plex Mono', monospace; }
 
-  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 20px; }
-  .kpi .n { font: 700 40px/1 'Barlow Condensed', sans-serif; margin-top: 6px; }
-  .kpi .n.money { color: var(--copper); }
-  .kpi .l { font-size: 13px; color: var(--muted); }
-  .kpi .s { font-size: 12px; color: var(--muted); margin-top: 4px; }
-  .cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; }
-  @media (max-width: 860px) { .cols { grid-template-columns: 1fr; } }
+  .report { max-width: 980px; margin: 0 0 22px; font-size: 21px; line-height: 1.5; }
+  .report p { margin: 0 0 4px; }
+  .report b { font: 600 20px 'IBM Plex Mono', monospace; }
+  .report .money { color: var(--money); }
+  .report .flag { color: var(--flag); }
 
-  .list { display: flex; flex-direction: column; }
-  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 10px 2px; border-top: 1px solid var(--line); cursor: pointer; background: none; border-left: 0; border-right: 0; border-bottom: 0; text-align: left; color: inherit; font: inherit; width: 100%; }
-  .row:first-child { border-top: 0; }
-  .row:hover .t { text-decoration: underline; }
-  .t { font-weight: 600; }
-  .sub { font-size: 13px; color: var(--muted); grid-column: 1 / -1; }
-  .pill { font: 600 11px 'IBM Plex Mono', monospace; letter-spacing: .08em; text-transform: uppercase; padding: 2px 8px; border-radius: 99px; border: 1px solid currentColor; align-self: start; white-space: nowrap; }
-  .st-new, .st-triaged, .st-offered, .st-offer-pending { color: var(--s-wait); }
-  .st-accepted, .st-booked, .st-on-a-job { color: var(--s-work); }
-  .st-failed { color: var(--s-fail); }
-  .st-available { color: var(--muted); }
-  .empty { color: var(--muted); padding: 10px 2px; }
+  .board { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(250px, 1fr); gap: 14px; overflow-x: auto; padding-bottom: 8px; align-items: start; }
+  .col { background-color: var(--rail); border-radius: 4px; padding: 0 0 12px; min-height: 260px; display: flex; flex-direction: column; }
+  .col > h2 { margin: 0; padding: 12px 14px 10px; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; border-bottom: 2px solid var(--rule); font: 700 20px/1 'Barlow Condensed', sans-serif; letter-spacing: .04em; text-transform: uppercase; }
+  .col > h2 .n { font: 600 13px 'IBM Plex Mono', monospace; color: var(--muted); }
+  .colhead { padding: 12px 14px 10px; border-bottom: 2px solid var(--rule); }
+  .colhead .nm { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font: 700 20px/1.1 'Barlow Condensed', sans-serif; letter-spacing: .03em; text-transform: uppercase; }
+  .colhead .state { font: 600 12px 'IBM Plex Mono', monospace; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+  .state.busy { color: var(--ok); } .state.offer { color: var(--money); } .state.free { color: var(--muted); }
+  .colhead .desc { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .colhead .meta { font: 500 12px 'IBM Plex Mono', monospace; color: var(--muted); margin-top: 6px; }
+  .slots { flex: 1; padding: 12px 10px 0; display: flex; flex-direction: column; gap: 12px; background-image: repeating-linear-gradient(180deg, transparent 0 104px, var(--rail-line) 104px 106px); background-position: 0 12px; }
+  .blank { font-size: 13px; color: var(--muted); padding: 6px 6px; }
 
-  .flowhead { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font: 600 13px 'IBM Plex Mono', monospace; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
-  .flowhead b { color: var(--ink); }
-  .pipe { flex: 0 0 36px; height: 8px; border-radius: 2px; background: linear-gradient(180deg, #F0B38C, #CF7742 40%, #8E4521); }
-  .board { display: grid; grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); gap: 20px; align-items: start; }
-  @media (max-width: 860px) { .board { grid-template-columns: 1fr; } }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
-  .incoming .card + .card { margin-top: 10px; }
-  .assoc { display: grid; grid-template-columns: minmax(260px, 340px) 40px minmax(0, 1fr); align-items: center; margin-bottom: 12px; }
-  @media (max-width: 860px) { .assoc { grid-template-columns: 1fr; } .assoc .pipe { display: none; } }
-  .assoc .pipe { width: 40px; flex: none; }
-  .name { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
-  .name strong { font-size: 16px; }
-  .desc { font-size: 13px; color: var(--muted); margin: 4px 0 8px; }
-  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip { font: 500 11px 'IBM Plex Mono', monospace; padding: 2px 7px; border-radius: 4px; background: color-mix(in srgb, var(--muted) 14%, transparent); }
-  .stats { font-size: 12px; color: var(--muted); margin-top: 8px; }
-  .custs { display: flex; flex-wrap: wrap; gap: 8px; }
-  .cust { background: var(--panel); border: 1px dashed var(--line); border-radius: 8px; padding: 8px 12px; min-width: 200px; }
-  .cust .t { font-size: 14px; }
-  .none { color: var(--muted); font-size: 13px; padding: 8px 0; }
+  .tcard { appearance: none; border: 0; text-align: left; color: inherit; font: inherit; cursor: pointer; display: block; width: calc(100% - 12px); margin: 0 6px; padding: 0; background: var(--card); border-radius: 0 0 3px 3px; box-shadow: 0 1px 0 rgba(0,0,0,.06), 0 3px 8px rgba(0,0,0,.07); }
+  .tcard .tab { display: flex; justify-content: space-between; gap: 8px; margin: 0 -6px; padding: 4px 9px; border-radius: 3px 3px 0 0; font: 600 11px 'IBM Plex Mono', monospace; letter-spacing: .1em; text-transform: uppercase; color: #17191C; }
+  .tab.high { background: var(--t-high); } .tab.medium { background: var(--t-medium); } .tab.low { background: var(--t-low); } .tab.none { background: var(--t-none); }
+  .tcard .body { padding: 9px 11px 10px; }
+  .tcard .is { font-weight: 600; line-height: 1.3; }
+  .tcard .cu { font-size: 13px; margin-top: 3px; }
+  .tcard .mt { font: 500 12px 'IBM Plex Mono', monospace; color: var(--muted); margin-top: 5px; }
+  .tcard .fl { font-size: 13px; font-weight: 600; color: var(--flag); margin-top: 6px; }
+  .tcard:hover .is { text-decoration: underline; }
 
-  .jobs { display: grid; grid-template-columns: minmax(260px, 380px) minmax(0, 1fr); gap: 16px; }
-  @media (max-width: 860px) { .jobs { grid-template-columns: 1fr; } }
-  .row.sel { background: color-mix(in srgb, var(--tape) 10%, transparent); }
-  .ev { display: grid; grid-template-columns: 76px 84px minmax(0, 1fr); gap: 10px; padding: 7px 0; border-top: 1px dashed var(--line); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
-  .ev .a { font: 600 12px 'IBM Plex Mono', monospace; color: var(--tape); }
-  @media (prefers-color-scheme: dark) { .ev .a { color: #8FA8FF; } }
-  @media (max-width: 560px) { .ev { grid-template-columns: 1fr; gap: 2px; } }
+  .ledger { display: grid; grid-template-columns: minmax(280px, 420px) minmax(0, 1fr); gap: 24px; }
+  @media (max-width: 860px) { .ledger { grid-template-columns: 1fr; } }
+  .ledger h2 { margin: 0 0 10px; font: 700 20px/1 'Barlow Condensed', sans-serif; letter-spacing: .04em; text-transform: uppercase; }
+  .line { appearance: none; border: 0; border-bottom: 1px solid var(--rule); background: none; color: inherit; font: inherit; text-align: left; width: 100%; padding: 10px 4px; cursor: pointer; display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 2px 10px; align-items: baseline; }
+  .line.sel { background: color-mix(in srgb, var(--tape) 12%, transparent); }
+  .sq { width: 10px; height: 10px; border-radius: 2px; align-self: center; }
+  .line .st { font: 600 12px 'IBM Plex Mono', monospace; text-transform: uppercase; color: var(--muted); }
+  .line .mt { grid-column: 2 / -1; font-size: 13px; color: var(--muted); }
+  .ev { display: grid; grid-template-columns: 80px 84px minmax(0, 1fr); gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--rule); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+  .ev .a { font: 600 12px 'IBM Plex Mono', monospace; color: var(--muted); text-transform: uppercase; }
+  #phones { margin: -24px; }
+  #phonesFrame { display: block; width: 100%; height: calc(100vh - 112px); min-height: 520px; border: 0; background: #4B5259; }
+  @media (max-width: 560px) { main { padding: 16px; } .report { font-size: 18px; } .ev { grid-template-columns: 1fr; gap: 2px; } }
 </style>
 </head>
 <body>
 <header>
-  <div class="brand">
-    <h1>Electron</h1><span>Owner's view</span>
+  <div class="top">
+    <h1>Electron</h1><span class="who">Owner's board</span>
     <span id="live"><span id="dot" class="dot"></span><span id="status">Connecting…</span></span>
   </div>
   <nav role="tablist" aria-label="Sections">
-    <button role="tab" aria-selected="true" data-tab="overview">Overview</button>
-    <button role="tab" aria-selected="false" data-tab="associates">Associates</button>
-    <button role="tab" aria-selected="false" data-tab="jobs">Jobs</button>
+    <button role="tab" aria-selected="true" data-tab="today">Today</button>
+    <button role="tab" aria-selected="false" data-tab="crew">Crew</button>
+    <button role="tab" aria-selected="false" data-tab="ledger">Job log</button>
+    <button role="tab" aria-selected="false" data-tab="phones">Phones</button>
   </nav>
 </header>
 
 <main>
-  <section id="overview" role="tabpanel">
-    <div class="kpis" id="kpis"></div>
-    <div class="cols">
-      <div class="panel"><h2>Needs you</h2><div class="list" id="needs"></div></div>
-      <div class="panel"><h2>Recent jobs</h2><div class="list" id="recent"></div></div>
-    </div>
+  <section id="today" role="tabpanel">
+    <div class="report" id="report"></div>
+    <div class="board" id="jobboard"></div>
   </section>
 
-  <section id="associates" role="tabpanel" class="hidden">
-    <div class="flowhead"><b>Customers</b><span class="pipe" aria-hidden="true"></span><b>Associates</b><span class="pipe" aria-hidden="true"></span><b>Their customers</b></div>
-    <div class="board">
-      <div class="incoming"><h2>Incoming</h2><div id="incoming"></div></div>
-      <div><h2>Associates</h2><div id="assocs"></div></div>
-    </div>
+  <section id="crew" role="tabpanel" class="hidden">
+    <div class="report"><p>Each customer comes in on the left and lands under the person who took the job.</p></div>
+    <div class="board" id="crewboard"></div>
   </section>
 
-  <section id="jobs" role="tabpanel" class="hidden">
-    <div class="jobs">
-      <div class="panel"><h2>All jobs</h2><div class="list" id="joblist"></div></div>
-      <div class="panel"><h2 id="traceTitle">Agent trace</h2><div id="trace" class="muted">Pick a job to see each step.</div></div>
+  <section id="phones" role="tabpanel" class="hidden">
+    <iframe id="phonesFrame" title="Live view of the customer and two plumbers' phones" data-src="/phones"></iframe>
+  </section>
+
+  <section id="ledger" role="tabpanel" class="hidden">
+    <div class="ledger">
+      <div><h2>Every job</h2><div id="joblist"></div></div>
+      <div><h2 id="traceTitle">What happened</h2><div id="trace" class="blank">Pick a job to see each step, in order.</div></div>
     </div>
   </section>
 </main>
 
 <script>
+// Opened straight from disk (file://)? The data lives on the Electron server, so go there.
+if (location.protocol === "file:") location.replace("http://localhost:8000/");
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const who = p => /^\+1\d{10}$/.test(p || "") ? p.replace(/^\+1(\d{3})(\d{3})(\d{4})$/, "($1) $2-$3") : (p || "unknown");
-const money = q => q ? `$${Math.round(q.low)}–$${Math.round(q.high)}` : "no quote";
+const money = q => q ? `$${Math.round(q.low)}–${Math.round(q.high)}` : "";
 const ago = iso => { if (!iso) return ""; const m = Math.round((Date.now() - new Date(iso)) / 60000);
-  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
-const pill = s => `<span class="pill st-${esc(String(s).replace(/ /g, "-"))}">${esc(s)}</span>`;
-let tab = "overview", selected = null;
+  return m < 1 ? "just now" : m < 60 ? `${m}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`; };
+const URG = { high: "Urgent", medium: "Soon", low: "Whenever" };
+const SQ = { new: "var(--t-none)", triaged: "var(--t-none)", offered: "var(--t-medium)", accepted: "var(--t-low)", booked: "var(--t-low)", failed: "var(--t-high)" };
+let tab = "today", selected = null;
 
-function jobRow(j, extra = "") {
-  return `<button class="row" data-job="${esc(j.id)}">
-    <span class="t">${esc(j.issue)}</span>${pill(j.status)}
-    <span class="sub">${esc(who(j.customer))} · ${ago(j.created_at)}${j.tech ? " · " + esc(j.tech) : ""} · ${money(j.quote)}${extra}</span>
-  </button>`;
+function tcard(j, note) {
+  const u = j.urgency || "none";
+  return `<button class="tcard" data-job="${esc(j.id)}">
+    <span class="tab ${esc(u)}"><span>${esc(URG[u] || "Not triaged")}</span><span>${ago(j.created_at)}</span></span>
+    <span class="body">
+      <span class="is" style="display:block">${esc(j.issue)}</span>
+      <span class="cu" style="display:block">${esc(who(j.customer))}</span>
+      <span class="mt" style="display:block">${[note, money(j.quote)].filter(Boolean).map(esc).join(" · ")}</span>
+      ${j.needs ? `<span class="fl" style="display:block">→ ${esc(j.needs)}</span>` : ""}
+    </span></button>`;
+}
+
+function column(title, cards, blank) {
+  return `<div class="col"><h2>${esc(title)}<span class="n">${cards.length}</span></h2>
+    <div class="slots">${cards.length ? cards.join("") : `<div class="blank">${esc(blank)}</div>`}</div></div>`;
 }
 
 async function getJSON(u) { const r = await fetch(u, { cache: "no-store" }); if (!r.ok) throw new Error(r.status); return r.json(); }
+const n = (x, one, many) => `<b>${x}</b> ${x === 1 ? one : many}`;
 
-async function loadOverview() {
-  const s = await getJSON("/api/owner/summary");
-  const rate = s.acceptance_rate == null ? "–" : Math.round(s.acceptance_rate * 100) + "%";
-  $("kpis").innerHTML = [
-    ["Open jobs", s.open, "being triaged or offered"],
-    ["Techs working", s.working, "accepted jobs in progress"],
-    ["Last 24 hours", s.jobs_24h, `${s.accepted_24h} accepted · ${s.failed_24h} failed`],
-    ["Acceptance rate", rate, `${s.offers_responded} offers answered`],
-    ["Accepted work", s.pipeline.jobs ? `$${Math.round(s.pipeline.low)}–${Math.round(s.pipeline.high)}` : "$0", `estimated, ${s.pipeline.jobs} jobs`],
-  ].map(([l, n, sub], i) => `<div class="panel kpi"><div class="l">${l}</div><div class="n${i === 4 ? " money" : ""}">${esc(n)}</div><div class="s">${esc(sub)}</div></div>`).join("");
-  $("needs").innerHTML = s.needs_you.length ? s.needs_you.map(j => jobRow(j, ` · <strong>${esc(j.reason)}</strong>`)).join("")
-    : `<div class="empty">Nothing needs you right now.</div>`;
-  $("recent").innerHTML = s.recent.length ? s.recent.map(j => jobRow(j)).join("") : `<div class="empty">No jobs yet. They appear when a customer texts.</div>`;
+async function loadToday() {
+  const [s, b] = await Promise.all([getJSON("/api/owner/summary"), getJSON("/api/owner/board")]);
+  const rate = s.acceptance_rate == null ? null : Math.round(s.acceptance_rate * 100);
+  const lines = [
+    s.jobs_24h
+      ? `In the last 24 hours ${n(s.jobs_24h, "customer", "customers")} texted in: <b>${s.accepted_24h}</b> taken, <b class="${s.failed_24h ? "flag" : ""}">${s.failed_24h}</b> found nobody.`
+      : `No customers have texted in the last 24 hours.`,
+    `Right now ${n(s.open, "job is", "jobs are")} waiting on a tech and ${n(s.working, "is", "are")} being worked` +
+      (s.pipeline.jobs ? `, worth about <b class="money">$${Math.round(s.pipeline.low)}–${Math.round(s.pipeline.high)}</b>.` : "."),
+    rate == null ? "" : `Techs have said yes to <b>${rate}%</b> of ${s.offers_responded} answered offers.`,
+    s.needs_you.length ? `<span class="flag">${n(s.needs_you.length, "job needs", "jobs need")} you. They're flagged in red below.</span>` : "",
+  ].filter(Boolean);
+  $("report").innerHTML = lines.map(l => `<p>${l}</p>`).join("");
+  $("jobboard").innerHTML = [
+    column("Waiting", b.waiting.map(j => tcard(j, j.status === "new" ? "being read" : "ready to offer")), "No one waiting."),
+    column("Offered", b.offered.map(j => tcard(j, j.offered_to ? "with " + j.offered_to : "")), "No offers out."),
+    column("Taken", b.taken.map(j => tcard(j, j.tech || "")), "Nothing taken yet."),
+    column("Dropped", b.dropped.map(j => tcard(j, "no tech took it")), "Nothing dropped today."),
+  ].join("");
 }
 
-async function loadAssociates() {
+async function loadCrew() {
   const a = await getJSON("/api/owner/associates");
-  $("incoming").innerHTML = a.incoming.length ? a.incoming.map(j => `<div class="card">
-      <div class="name"><strong>${esc(who(j.customer))}</strong>${pill(j.status)}</div>
-      <div class="desc">${esc(j.issue)}</div>
-      <div class="stats">${j.offered_to ? "Offered to " + esc(j.offered_to) + " · " : ""}${ago(j.created_at)}</div></div>`).join("")
-    : `<div class="card none">No customers waiting. New texts land here first.</div>`;
-  $("assocs").innerHTML = a.associates.map(t => `<div class="assoc">
-      <div class="card">
-        <div class="name"><strong>${esc(t.name)}</strong>${pill(t.state)}</div>
-        <div class="desc">${esc(t.description || "No description yet")}</div>
-        <div class="chips">${t.skills.map(s => `<span class="chip">${esc(s.replace("_", " "))}</span>`).join("")}<span class="chip">★ ${esc(t.rating)}</span></div>
-        <div class="stats">${t.stats.offered} offers · ${t.stats.yes} yes · ${t.stats.no} no · ${t.stats.timeout} no reply</div>
+  const STATE = { "on a job": ["busy", "On a job"], "offer pending": ["offer", "Has an offer"], "available": ["free", "Free"] };
+  const crew = a.associates.map(t => {
+    const [cls, label] = STATE[t.state];
+    const took = t.stats.offered ? `took ${t.stats.yes} of ${t.stats.offered} offers` : "no offers yet";
+    return `<div class="col">
+      <div class="colhead">
+        <div class="nm"><span>${esc(t.name)}</span><span class="state ${cls}">${label}</span></div>
+        <div class="desc">${esc(t.description || "")}</div>
+        <div class="meta">${esc(t.skills.map(s => s.replace("_", " ")).join(" · "))} · ${esc(t.rating)}★ · ${took}</div>
       </div>
-      <span class="pipe" aria-hidden="true"></span>
-      <div class="custs">${t.customers.length ? t.customers.map(c => `<div class="cust">
-          <div class="t">${esc(who(c.customer))}</div><div class="sub">${esc(c.issue)} · ${money(c.quote)}</div></div>`).join("")
-        : `<span class="none">No customers right now</span>`}</div>
-    </div>`).join("");
+      <div class="slots">${t.customers.length ? t.customers.map(c => tcard(c, "")).join("") : `<div class="blank">No customers right now.</div>`}</div>
+    </div>`;
+  });
+  $("crewboard").innerHTML = column("Waiting", a.incoming.map(j => tcard(j, j.offered_to ? "offered to " + j.offered_to : "")), "No customers waiting.") + crew.join("");
 }
 
-async function loadJobs() {
+async function loadLedger() {
   const jobs = await getJSON("/api/jobs");
-  $("joblist").innerHTML = jobs.length ? jobs.map(j => jobRow({ id: j.id, issue: j.issue || (j.raw_text || "").split("\n")[0] || "(no description)",
-      status: j.status, customer: j.customer_phone, tech: j.assigned_tech_name, quote: j.quote })).join("")
-    : `<div class="empty">No jobs yet.</div>`;
-  document.querySelectorAll("#joblist .row").forEach(r => r.classList.toggle("sel", r.dataset.job === selected));
+  $("joblist").innerHTML = jobs.length ? jobs.map(j => `<button class="line${j.id === selected ? " sel" : ""}" data-job="${esc(j.id)}">
+      <span class="sq" style="background:${SQ[j.status] || "var(--t-none)"}" aria-hidden="true"></span>
+      <span>${esc(j.issue || (j.raw_text || "").split("\n")[0] || "(no description)")}</span><span class="st">${esc(j.status)}</span>
+      <span class="mt">${esc(who(j.customer_phone))}${j.assigned_tech_name ? " · " + esc(j.assigned_tech_name) : ""}${j.quote ? " · " + money(j.quote) : ""}</span>
+    </button>`).join("") : `<div class="blank">No jobs yet.</div>`;
   if (selected) {
     const evs = await getJSON(`/api/jobs/${encodeURIComponent(selected)}/events`);
-    $("trace").innerHTML = evs.map(e => `<div class="ev"><span class="muted mono">${new Date(e.created_at).toLocaleTimeString([], {hour: "numeric", minute: "2-digit", second: "2-digit"})}</span>
+    $("trace").classList.remove("blank");
+    $("trace").innerHTML = evs.map(e => `<div class="ev"><span class="a">${new Date(e.created_at).toLocaleTimeString([], {hour: "numeric", minute: "2-digit", second: "2-digit"})}</span>
       <span class="a">${esc(e.agent)}</span><span>${esc(e.message)}</span></div>`).join("") || "No steps logged yet.";
   }
 }
 
-const loaders = { overview: loadOverview, associates: loadAssociates, jobs: loadJobs };
+function loadPhones() {  // the phones page polls itself; load it once, the first time the tab opens
+  const f = $("phonesFrame");
+  if (!f.src) f.src = f.dataset.src;
+}
+
+const loaders = { today: loadToday, crew: loadCrew, ledger: loadLedger, phones: loadPhones };
 async function tick() {
-  try { await loaders[tab](); $("dot").className = "dot"; $("status").textContent = "Live · updates every 3 s"; }
+  try { await loaders[tab](); $("dot").className = "dot"; $("status").textContent = "Live · every 3 s"; }
   catch (e) { $("dot").className = "dot off"; $("status").textContent = "Can't reach the Electron server"; }
 }
 function show(name) {
@@ -206,8 +223,8 @@ function show(name) {
   tick();
 }
 document.querySelector("nav").addEventListener("click", e => { const b = e.target.closest("button[data-tab]"); if (b) show(b.dataset.tab); });
-document.addEventListener("click", e => { const r = e.target.closest("[data-job]"); if (r) { selected = r.dataset.job; show("jobs"); } });
-show("overview"); setInterval(tick, 3000);
+document.addEventListener("click", e => { const r = e.target.closest("[data-job]"); if (r) { selected = r.dataset.job; show("ledger"); } });
+show("today"); setInterval(tick, 3000);
 </script>
 </body>
 </html>

@@ -119,6 +119,8 @@
 </template>
 
 <script>
+// Opened straight from disk (file://)? The data lives on the Electron server, so go there.
+if (location.protocol === "file:") location.replace("http://localhost:8000/phones");
 const LEFT = { customer: 160, tech: 650, backup: 1140 };
 const TILT = { customer: -1, tech: 0.8, backup: -0.6 };
 const EMPTY = {
