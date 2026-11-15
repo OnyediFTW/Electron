@@ -1,5 +1,6 @@
 """Electron backend. Run: uvicorn main:app --reload --port 8000"""
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -93,6 +94,80 @@ def api_threads(since: str | None = None):
         role, label = ("tech", f"Plumber · {first}") if i == 0 else ("backup", f"Backup · {first}")
         phones.append({**thread(role, label, p), "key": first})
     return {"server_time": now, "phones": phones}
+
+
+_RANK_LINE = re.compile(r"^\d+\.\s+(.+?)\s{2,}([\d.]+)\s{2,}\((.*)\)$")
+
+
+@app.get("/api/ranking")
+def api_ranking(after: str | None = None):
+    """The newest job's matching for the ranking board on /phones: each scored plumber, the points
+    each factor gave them (recomputed from rank_techs' reasons with its own weights), and what
+    happened to their offer. Names only, no phone numbers: the tunnel makes this public."""
+    from matching.rank import HORIZON_HOURS, MAX_MILES, URGENT_FREE_MULTIPLIER, WEIGHTS
+
+    rows = [r for r in db.store.select("jobs") if not after or str(r.get("created_at") or "") > after]
+    if not rows:
+        return {"job": None, "techs": [], "weights": WEIGHTS}
+    job = max(rows, key=lambda r: str(r.get("created_at") or ""))
+    events = db.list_events(job["id"])
+    ranking = [e for e in events if e.get("agent") == "ranking"]
+    urgent = job.get("urgency") == "high"
+    w = {**WEIGHTS, "free": WEIGHTS["free"] * (URGENT_FREE_MULTIPLIER if urgent else 1)}
+    info = {"issue": job.get("issue") or "Reading the photo…", "urgency": job.get("urgency"),
+            "status": job["status"], "weights": w, "urgent_boost": URGENT_FREE_MULTIPLIER if urgent else None}
+    if not ranking:
+        return {"job": info, "techs": [], "weights": w}
+
+    by_name = {t.name: t for t in db.list_techs()}
+    offers: dict[str, dict] = {}
+    for o in db.store.select("offers", job_id=job["id"]):
+        offers[o["tech_id"]] = o  # latest offer per tech
+    skipped: set[str] = set()
+    for e in events:
+        m = re.match(r"^skipped (.+?): ", e.get("message") or "")
+        if m:
+            skipped.update(n.strip() for n in m.group(1).split(","))
+
+    def num(pattern: str, text: str) -> float | None:
+        m = re.search(pattern, text)
+        return float(m.group(1)) if m else None
+
+    techs = []
+    for line in ranking[-1]["message"].split("\n"):
+        m = _RANK_LINE.match(line.strip())
+        if not m:
+            continue
+        name, score, reasons = m.group(1), float(m.group(2)), m.group(3)
+        d, stars = num(r"([\d.]+) mi away", reasons), num(r"([\d.]+) stars", reasons)
+        hrs, n_open = num(r"free in (\d+)h", reasons), num(r"(\d+) open jobs", reasons)
+        points = {
+            "skill": w["skill"],
+            "distance": w["distance"] * max(0.0, 1 - d / MAX_MILES) if d is not None else 0.0,
+            "free": w["free"] * max(0.0, 1 - hrs / HORIZON_HOURS) if hrs is not None else 0.0,
+            "rating": w["rating"] * (stars or 0) / 5,
+            "workload": w["workload"] / (1 + (n_open or 0)),
+        }
+        t = by_name.get(name)
+        o = offers.get(t.id) if t else None
+        if t and job.get("assigned_tech_id") == t.id and job["status"] in ("accepted", "booked"):
+            state = "booked" if job["status"] == "booked" else "took it"
+        elif o and o.get("response") == "no":
+            state = "passed"
+        elif o and o.get("response") == "timeout":
+            state = "no reply"
+        elif o and not o.get("response") and job["status"] == "offered":
+            state = "offered"
+        elif name in skipped:
+            state = "not on iMessage"
+        else:
+            state = "in line"
+        techs.append({
+            "name": name, "score": score, "state": state,
+            "points": {k: round(v, 1) for k, v in points.items()},
+            "facts": {"miles": d, "stars": stars, "free_in_h": hrs, "open_jobs": n_open},
+        })
+    return {"job": info, "techs": techs, "weights": w}
 
 
 @app.get("/phones")

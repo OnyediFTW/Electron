@@ -23,7 +23,7 @@
     background-size: 32px 32px; background-position: 16px 16px;
     font-family: 'IBM Plex Sans', system-ui, sans-serif; color: var(--ink); overflow: hidden;
   }
-  #stage { position: absolute; left: 50%; top: 50%; width: 1600px; height: 1040px; transform-origin: center center; }
+  #stage { position: absolute; left: 50%; top: 50%; width: 1960px; height: 1040px; transform-origin: center center; }
   .abs { position: absolute; }
 
   h1 { margin: 0; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 72px; line-height: 1; letter-spacing: .01em; text-transform: uppercase; white-space: nowrap; }
@@ -63,6 +63,36 @@
   @keyframes pop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   @media (prefers-reduced-motion: reduce) { .b, .photo { animation: none; } .pipe, #valveStem, #valveWheel { transition: none; } .thread { scroll-behavior: auto; } }
 
+  /* Ranking board: how the algorithm picked the plumber, factor by factor */
+  #board { left: 1540px; top: 214px; width: 340px; }
+  .card { position: absolute; left: 0; top: 56px; width: 340px; height: 640px; background: #FBFBF9; color: var(--text); border-radius: 14px; box-shadow: 0 30px 50px rgba(0,0,0,.45), inset 0 0 0 1px #E3E5E8; display: flex; flex-direction: column; overflow: hidden; }
+  .card .top { padding: 18px 18px 12px; border-bottom: 1px solid #E8EAED; }
+  .eyebrow { font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  .job { margin-top: 6px; font-size: 16px; font-weight: 600; line-height: 1.3; }
+  .boost { margin-top: 6px; font-size: 12px; color: #A0532B; font-weight: 500; min-height: 16px; }
+  .rows { flex: 1; overflow-y: auto; padding: 8px 18px; }
+  .row { padding: 10px 0 11px; border-bottom: 1px dashed #E1E3E6; animation: pop .3s ease-out; }
+  .row:last-child { border-bottom: 0; }
+  .row .l1 { display: flex; align-items: baseline; gap: 8px; }
+  .rank { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--muted); width: 20px; }
+  .who { font-size: 14.5px; font-weight: 600; flex: 1; }
+  .score { font-family: 'IBM Plex Mono', monospace; font-size: 19px; font-weight: 600; }
+  .bar { display: flex; height: 9px; margin: 7px 0 6px 28px; border-radius: 2px; overflow: hidden; background: #EEF0F2; }
+  .bar span { display: block; height: 100%; transition: width .5s ease; }
+  .facts { margin-left: 28px; font-size: 11.5px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+  .pill { font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; padding: 2px 7px; border-radius: 2px; white-space: nowrap; color: #fff; background: #9AA1A9; }
+  .pill.offered { background: var(--tape); }
+  .pill.took, .pill.booked { background: #2F8A4C; }
+  .pill.passed, .pill.noreply { background: #7A8590; text-decoration: line-through; }
+  .pill.skip { background: transparent; color: var(--muted); box-shadow: inset 0 0 0 1px #C5CAD0; }
+  .row.lead .who { color: var(--tape); }
+  .row.out { opacity: .55; }
+  .legend { padding: 12px 18px 16px; border-top: 1px solid #E8EAED; font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+  .keys { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 6px; }
+  .keys i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .f-skill { background: #1E2328; } .f-distance { background: #2563EB; } .f-free { background: #CF7742; }
+  .f-rating { background: #C9A64B; } .f-workload { background: #7A8590; }
+
   .foot { font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: var(--ink-2); }
   .live { display: inline-flex; align-items: center; gap: 8px; }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: #7BD88F; box-shadow: 0 0 0 3px rgba(123,216,143,.25); }
@@ -94,7 +124,25 @@
 
   <div id="phones"></div>
 
-  <div class="foot abs" style="left: 96px; top: 960px; width: 1408px; display: flex; flex-wrap: wrap; gap: 8px 36px">
+  <div id="board" class="abs">
+    <div style="position: absolute; left: 0; top: 0; width: 340px; display: flex; justify-content: center">
+      <div class="tape lg" style="transform: rotate(0.6deg)">Who gets the job</div>
+    </div>
+    <div class="card" aria-live="polite">
+      <div class="top">
+        <div class="eyebrow">Matching · not an AI guess</div>
+        <div class="job" id="rankJob">Waiting for a job</div>
+        <div class="boost" id="rankBoost"></div>
+      </div>
+      <div class="rows" id="rankRows"><div class="empty">When a photo comes in, every plumber is scored here and the highest score gets the offer first.</div></div>
+      <div class="legend">
+        <div class="keys" id="rankKeys"></div>
+        Highest score is offered first. NO or 60 s of silence passes it down the list.
+      </div>
+    </div>
+  </div>
+
+  <div class="foot abs" style="left: 96px; top: 960px; width: 1768px; display: flex; flex-wrap: wrap; gap: 8px 36px">
     <span class="live"><span id="dot" class="dot"></span><span id="status">Connecting…</span></span>
     <span>AI reads the photo, likely parts and price · Books a real slot on the plumber’s calendar when you OK the estimate</span>
   </div>
@@ -133,7 +181,7 @@ const stage = document.getElementById("stage");
 let since = null, slots = {}, seen = {};
 
 function fit() {
-  const s = Math.min(innerWidth / 1600, innerHeight / 1040);
+  const s = Math.min(innerWidth / 1960, innerHeight / 1040);
   stage.style.transform = `translate(-50%, -50%) scale(${s})`;
 }
 addEventListener("resize", fit); fit();
@@ -210,11 +258,73 @@ function render(data) {
   }
 }
 
+// ---------- ranking board ----------
+const FACTORS = [["skill", "Skill"], ["distance", "Distance"], ["free", "Free time"], ["rating", "Rating"], ["workload", "Workload"]];
+const PILL = { "offered": ["offered", "Offered"], "took it": ["took", "Took it"], "booked": ["booked", "Booked"],
+  "passed": ["passed", "Passed"], "no reply": ["noreply", "No reply"], "not on iMessage": ["skip", "Not on iMessage"], "in line": ["", "In line"] };
+let sessionStart = null, rankKey = "";
+
+function factsLine(f) {
+  const out = [];
+  if (f.miles != null) out.push(`${f.miles} mi`);
+  if (f.stars != null) out.push(`${f.stars}★`);
+  out.push(f.free_in_h != null ? `free in ${f.free_in_h}h` : "no openings");
+  if (f.open_jobs != null) out.push(`${f.open_jobs} open job${f.open_jobs === 1 ? "" : "s"}`);
+  return out.join(" · ");
+}
+
+function renderRanking(r) {
+  const key = JSON.stringify(r);
+  if (key === rankKey) return;
+  rankKey = key;
+  const w = r.weights || {};
+  document.getElementById("rankKeys").innerHTML =
+    FACTORS.map(([k, label]) => `<span><i class="f-${k}"></i>${label} ${w[k] ?? ""}</span>`).join("");
+  document.getElementById("rankJob").textContent = r.job ? r.job.issue : "Waiting for a job";
+  document.getElementById("rankBoost").textContent =
+    r.job && r.job.urgent_boost ? `Urgent: free time counts ×${r.job.urgent_boost}` : "";
+  const rows = document.getElementById("rankRows");
+  if (!r.techs.length) {
+    rows.replaceChildren(el("div", "empty", r.job ? "Scoring the plumbers…" :
+      "When a photo comes in, every plumber is scored here and the highest score gets the offer first."));
+    return;
+  }
+  const max = Object.values(w).reduce((a, b) => a + b, 0) || 100;
+  rows.replaceChildren(...r.techs.map((t, i) => {
+    const row = el("div", "row");
+    const [cls, label] = PILL[t.state] || ["", t.state];
+    if (["offered", "took it", "booked"].includes(t.state)) row.classList.add("lead");
+    if (["passed", "no reply", "not on iMessage"].includes(t.state)) row.classList.add("out");
+    const l1 = el("div", "l1");
+    l1.append(el("span", "rank", `#${i + 1}`), el("span", "who", t.name), el("span", "score", t.score.toFixed(1)));
+    const bar = el("div", "bar");
+    bar.title = FACTORS.map(([k, n]) => `${n} ${t.points[k]}`).join(" + ");
+    for (const [k] of FACTORS) {
+      const seg = el("span", `f-${k}`);
+      seg.style.width = (100 * t.points[k] / max) + "%";
+      bar.appendChild(seg);
+    }
+    const facts = el("div", "facts");
+    facts.append(el("span", "", factsLine(t.facts)), el("span", `pill ${cls}`, label));
+    row.append(l1, bar, facts);
+    return row;
+  }));
+}
+
+async function pollRanking() {
+  if (!sessionStart) return;
+  try {
+    const r = await fetch("/api/ranking?after=" + encodeURIComponent(sessionStart), { cache: "no-store" });
+    renderRanking(await r.json());
+  } catch (e) { /* the phones' status line already reports a dead server */ }
+}
+
 async function poll() {
   try {
     const r = await fetch("/api/threads" + (since ? "?since=" + encodeURIComponent(since) : ""), { cache: "no-store" });
     const data = await r.json();
     if (!since) since = data.server_time;
+    if (!sessionStart) sessionStart = data.server_time;
     render(data);
     document.getElementById("dot").className = "dot";
     document.getElementById("status").textContent = "Live · updates every 1.5 s";
@@ -227,12 +337,13 @@ async function poll() {
 document.getElementById("reset").addEventListener("click", async () => {
   // Clear the screens, and tell the server the next text is a new request (nothing is deleted).
   try { await fetch("/api/start-over", { method: "POST" }); } catch (e) {}
-  since = null; seen = {};
+  since = null; seen = {}; sessionStart = null; rankKey = "";
   setValve(false);
   await poll();
 });
 
 poll(); setInterval(poll, 1500);
+setInterval(pollRanking, 2000);
 </script>
 </body>
 </html>
