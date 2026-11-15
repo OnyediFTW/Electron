@@ -195,7 +195,9 @@ function render(data) {
     if (before === 0) thread.replaceChildren(el("div", "stamp", "Today " + time(msgs[0].created_at)));
     for (const m of msgs.slice(before)) {
       const mine = m.direction === "in";  // "in" = this person texted Electron
-      if (m.photo_url) thread.appendChild(Object.assign(document.createElement("img"), { className: "photo", src: m.photo_url, alt: "Photo sent by the customer" }));
+      // Load photos from this page's own server: the public (ngrok) URL shows a browser warning page instead.
+      const src = m.photo_url ? m.photo_url.replace(/^https?:\/\/[^/]+(?=\/photos\/)/, "") : null;
+      if (src) thread.appendChild(Object.assign(document.createElement("img"), { className: "photo", src, alt: "Photo sent by the customer" }));
       if (m.text) { const b = el("div", "b " + (mine ? "mine" : "theirs")); b.innerHTML = md(m.text); thread.appendChild(b); }
       if (p.role === "backup") flash("pipeC");
       else if (p.role === "customer" && !mine) flash("pipeB");
