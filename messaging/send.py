@@ -13,7 +13,8 @@ from messaging import photon
 from shared.db import log_event, log_message
 
 
-def send_text(phone: str, text: str, *, job_id: str | None = None, photo_url: str | None = None) -> None:
+def send_text(phone: str, text: str, *, job_id: str | None = None, photo_url: str | None = None,
+              markdown: bool = False) -> None:
     if photo_url and photon.configured():
         try:
             photon.send_photo(phone, photo_url)
@@ -26,7 +27,7 @@ def send_text(phone: str, text: str, *, job_id: str | None = None, photo_url: st
     log_message(phone, "out", text, photo_url=photo_url, job_id=job_id)
     if photon.configured():
         try:
-            photon.send(phone, text)
+            photon.send(phone, text, markdown=markdown)
         except Exception as e:
             log_event(job_id, "outbox", f"SEND FAILED to {phone}: {e!r}\n{text}")
             return
