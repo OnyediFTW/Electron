@@ -75,6 +75,11 @@ class Job(BaseModel):
     follow_up_question: Optional[str] = None
     # Set by intake() when there's a photo: what the vision model sees, for the tech's offer text.
     photo_description: Optional[str] = None
+    # Set by intake() for repeat customers: one line for the tech about related past jobs.
+    history_note: Optional[str] = None
+    # Set by intake() when there's danger or ongoing damage: what the customer should do
+    # right now, texted before anything else. Not stored in the jobs table.
+    safety_instruction: Optional[str] = None
 
 
 class Tech(BaseModel):
