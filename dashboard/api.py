@@ -90,13 +90,15 @@ def summary():
 
     responded = [o for o in offers if o.get("response")]
     yes = sum(o["response"] == "yes" for o in responded)
-    working = [j for j in jobs if j["status"] in WORKING and j.get("quote")]
+    def current(j):  # active, or confirmed in the last 24 h (matches the board's Taken column)
+        return j["status"] == "accepted" or (j["status"] in WORKING and (_ts(j.get("created_at")) or now) >= day_ago)
+    working = [j for j in jobs if current(j) and j.get("quote")]
     needs = _needs(jobs, offers, now)
     needs_you = [{**_job_card(j, names), "reason": needs[j["id"]]} for j in jobs if j["id"] in needs]
 
     return {
         "open": sum(j["status"] in OPEN for j in jobs),
-        "working": sum(j["status"] in WORKING for j in jobs),
+        "working": sum(1 for j in jobs if current(j)),
         "accepted_24h": sum(j["status"] in WORKING for j in recent),
         "failed_24h": sum(j["status"] == "failed" for j in recent),
         "jobs_24h": len(recent),
