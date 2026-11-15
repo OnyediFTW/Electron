@@ -17,7 +17,8 @@ import threading
 from datetime import datetime, timezone
 
 from agents import find_parts, intake, job_prep, quote
-from matching import book, free_slots, rank_techs
+from matching import book, rank_techs
+from matching import calendar as tech_calendar
 from messaging import ai_router, photon, tech_assistant
 from messaging.send import send_text
 from messaging.state import advance
@@ -459,10 +460,22 @@ def _request_approval(job_id: str, tech) -> None:
     db.log_event(job_id, "messaging", "waiting for the customer to approve the estimate")
 
 
+def _real_slots(tech_id: str) -> list:
+    """Open times from the tech's real Google Calendar. Empty when scheduling is off, the tech has no
+    calendar, or Google fails, so the customer is never told a time from the fake calendar."""
+    if not SCHEDULING_ENABLED or not tech_calendar._enabled() or not tech_calendar._calendar_id(tech_id):
+        return []
+    try:
+        return tech_calendar._google_slots(tech_calendar._calendar_id(tech_id))
+    except Exception as e:
+        db.log_event(None, "calendar", f"real calendar read failed, confirming without a time: {e!r}")
+        return []
+
+
 def _confirm(job: Job) -> None:
     """Customer said OK: the job is booked. With real scheduling, the time slot is booked here too."""
     tech = db.get_tech(job.assigned_tech_id)
-    slots = free_slots(tech.id) if SCHEDULING_ENABLED else []
+    slots = _real_slots(tech.id)
     if slots:
         slot = slots[0]
         book(tech.id, job.id, slot)
