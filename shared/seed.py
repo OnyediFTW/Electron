@@ -37,11 +37,13 @@ def seed(reset: bool = False) -> None:
     existing = {t.name: t for t in db.list_techs()}
     if existing:
         updated = 0
-        for name, _phone, skills, _lat, _lng, _rating, description in DEMO_TECHS:
-            if name in existing:
-                db.store.update("techs", existing[name].id, {"skills": skills, "description": description})
+        for name, _phone, skills, lat, lng, rating, description in DEMO_TECHS:
+            if name in existing:  # phones stay as they are (they're real people's numbers)
+                db.store.update("techs", existing[name].id, {"skills": skills, "description": description,
+                                                             "lat": lat, "lng": lng, "rating": rating})
                 updated += 1
-        print(f"[seed] techs already present ({len(existing)}); refreshed skills + descriptions for {updated}")
+        print(f"[seed] techs already present ({len(existing)}); refreshed skills, descriptions, "
+              f"locations and ratings for {updated}")
         return
     for name, phone, skills, lat, lng, rating, description in DEMO_TECHS:
         db.store.insert("techs", {
