@@ -179,7 +179,7 @@ async function loadToday() {
   $("jobboard").innerHTML = [
     column("Waiting", b.waiting.map(j => tcard(j, j.status === "new" ? "being read" : "ready to offer")), "No one waiting."),
     column("Offered", b.offered.map(j => tcard(j, j.offered_to ? "with " + j.offered_to : "")), "No offers out."),
-    column("Taken", b.taken.map(j => tcard(j, j.tech || "")), "Nothing taken yet."),
+    column("Taken", b.taken.map(j => tcard(j, (j.tech || "") + (j.status === "booked" ? " · confirmed" : " · awaiting customer OK"))), "Nothing taken yet."),
     column("Dropped", b.dropped.map(j => tcard(j, "no tech took it")), "Nothing dropped today."),
   ].join("");
 }

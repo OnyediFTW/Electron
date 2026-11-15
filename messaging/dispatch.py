@@ -92,6 +92,16 @@ def handle_inbound(phone: str, text: str, photo_url: str | None = None) -> None:
 def _handle_customer_text(phone: str, text: str, photo_url: str | None, open_job: Job | None) -> None:
     """Gemini reads the text (and photo) against the customer's open job and decides:
     same job (forward to its tech), new job (full triage), or chitchat (just reply)."""
+    # Waiting on this customer's OK for an estimate? A plain yes/no answers that, nothing else.
+    if open_job and open_job.status == JobStatus.accepted and not photo_url:
+        with _dispatch_lock:
+            job = db.get_job(open_job.id)
+            if job.status == JobStatus.accepted and _approves(text):
+                _confirm(job)
+                return
+            if job.status == JobStatus.accepted and _declines(text):
+                _decline_estimate(job)
+                return
     photon.typing(phone)  # '...' while the AI thinks
     if NEW_JOB.match(text):
         action, reply = "new_job", None
@@ -226,7 +236,9 @@ def handle_customer_followup(job: Job, text: str, photo_url: str | None) -> Job 
         tech = db.get_tech(job.assigned_tech_id) if job.assigned_tech_id else None
         if tech:
             send_text(tech.phone, update, job_id=job.id, photo_url=photo_url)
-            send_text(job.customer_phone, f"Thanks, I passed that on to {_first(tech.name)}.", job_id=job.id)
+            reminder = (f" To confirm the {_quote_text(job)} estimate, reply OK." if job.status == JobStatus.accepted
+                        else "")
+            send_text(job.customer_phone, f"Thanks, I passed that on to {_first(tech.name)}.{reminder}", job_id=job.id)
         else:
             send_text(job.customer_phone, "Thanks, I added that to your request.", job_id=job.id)
     return None
@@ -386,7 +398,7 @@ def _accept(offer: Offer, tech, how: str) -> None:
     db.update_offer(offer.id, OfferResponse.yes.value)
     db.update_job_fields(offer.job_id, assigned_tech_id=tech.id)
     advance(offer.job_id, JobStatus.accepted, f"{tech.name} {how}")
-    _schedule(offer.job_id, tech.id)
+    _request_approval(offer.job_id, tech)
     _maybe_send_prep(offer.job_id)
 
 
@@ -418,26 +430,60 @@ def respond_to_offer(offer_id: str, accept: bool) -> str:
         return "passed"
 
 
-def _schedule(job_id: str, tech_id: str) -> None:
-    job, tech = db.get_job(job_id), db.get_tech(tech_id)
-    slots = free_slots(tech_id) if SCHEDULING_ENABLED else []
-    if not slots:
-        # Scheduling isn't connected yet: say so instead of inventing a time.
-        db.log_event(job_id, "calendar", "no scheduling yet: time to be arranged between tech and customer")
-        send_text(job.customer_phone,
-                  f"{tech.name} accepted your job. We can't schedule a time automatically yet, "
-                  f"so {_first(tech.name)} will text you to set one. Price: {_quote_text(job)}.",
-                  job_id=job_id)
-        send_text(tech.phone,
-                  f"The job is yours. Scheduling isn't set up yet, so text the customer at "
-                  f"{job.customer_phone} to set a time.",
-                  job_id=job_id)
-        return
+# ---------- customer approves the estimate before the truck rolls ----------
+# accepted = a tech took it and we're waiting on the customer's OK; booked = both sides confirmed.
 
-    slot = slots[0]
-    book(tech_id, job_id, slot)
-    advance(job_id, JobStatus.booked, f"{slot.start:%a %I:%M %p}")
+APPROVE = re.compile(r"^\s*(ok|okay|k|yes|yep|yeah|sure|confirm(ed)?|approved?|sounds good|go ahead|do it|deal|book it)\b", re.I)
+DECLINE = re.compile(r"^\s*(no|nope|nah|cancel|too (much|expensive|pricey)|not now|never ?mind|don'?t)\b", re.I)
+
+
+def _approves(text: str) -> bool:
+    return bool(APPROVE.match(text)) and "?" not in text and len(text.split()) <= 6
+
+
+def _declines(text: str) -> bool:
+    return bool(DECLINE.match(text)) and "?" not in text and len(text.split()) <= 10
+
+
+def _request_approval(job_id: str, tech) -> None:
+    job = db.get_job(job_id)
+    what = f" ({job.issue})" if job.issue else ""
     send_text(job.customer_phone,
-              f"You're booked: {tech.name} arrives {slot.start:%a %b %d, %I:%M %p}. Price: {_quote_text(job)}.",
+              f"Good news: {tech.name} can take your job{what}. Estimated price: {_quote_text(job)} "
+              f"for labor and parts. Reply OK to confirm, or NO to cancel.",
               job_id=job_id)
-    send_text(tech.phone, f"Confirmed for {slot.start:%a %I:%M %p}. Added to your calendar.", job_id=job_id)
+    send_text(tech.phone,
+              f"The job is yours. I've asked the customer to OK the {_quote_text(job)} estimate "
+              f"and I'll text you the moment they do.",
+              job_id=job_id)
+    db.log_event(job_id, "messaging", "waiting for the customer to approve the estimate")
+
+
+def _confirm(job: Job) -> None:
+    """Customer said OK: the job is booked. With real scheduling, the time slot is booked here too."""
+    tech = db.get_tech(job.assigned_tech_id)
+    slots = free_slots(tech.id) if SCHEDULING_ENABLED else []
+    if slots:
+        slot = slots[0]
+        book(tech.id, job.id, slot)
+        advance(job.id, JobStatus.booked, f"customer approved; {slot.start:%a %I:%M %p}")
+        send_text(job.customer_phone, f"You're booked: {tech.name} arrives {slot.start:%a %b %d, %I:%M %p}. "
+                                      f"Price: {_quote_text(job)}.", job_id=job.id)
+        send_text(tech.phone, f"Customer approved the {_quote_text(job)} estimate. Booked for "
+                              f"{slot.start:%a %I:%M %p}, added to your calendar.", job_id=job.id)
+        return
+    # Scheduling isn't connected yet: confirm the job, and say plainly that the time is set by text.
+    advance(job.id, JobStatus.booked, "customer approved the estimate")
+    send_text(job.customer_phone, f"Confirmed. {tech.name} will text you shortly to set a time.", job_id=job.id)
+    send_text(tech.phone, f"Customer approved the {_quote_text(job)} estimate. Text them at "
+                          f"{job.customer_phone} to set a time.", job_id=job.id)
+
+
+def _decline_estimate(job: Job) -> None:
+    tech = db.get_tech(job.assigned_tech_id) if job.assigned_tech_id else None
+    advance(job.id, JobStatus.failed, "customer declined the estimate")
+    send_text(job.customer_phone, "No problem, I've cancelled it. Text me anytime if you need a plumber.",
+              job_id=job.id)
+    if tech:
+        send_text(tech.phone, "The customer passed on the estimate, so this job is cancelled. "
+                              "Thanks for taking it.", job_id=job.id)
