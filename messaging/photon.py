@@ -54,19 +54,44 @@ def get_contact(phone: str) -> Optional[dict]:
 
 # ---------- outbound ----------
 
-def send(phone: str, text: str) -> None:
-    """Raises on failure; messaging.send.send_text catches and logs."""
+def _post_content(phone: str, content: dict, timeout: float = 5) -> None:
     c = get_contact(phone)
     if not c:
         raise RuntimeError(f"{phone} hasn't texted the line yet (no Photon space)")
     r = httpx.post(
         f"{API}/projects/{_cfg()[1]}/messages",
         headers={**_headers(), "idempotency-key": str(uuid4())},
-        json={"spaceId": c["space_id"], "senderId": c["line_user_id"],
-              "content": {"type": "text", "format": "plain", "text": text}},
-        timeout=5,
+        json={"spaceId": c["space_id"], "senderId": c["line_user_id"], "content": content},
+        timeout=timeout,
     )
     r.raise_for_status()
+
+
+# Markdown renders as iMessage formatting (bold etc.). PHOTON_MARKDOWN=false sends plain text.
+MARKDOWN = os.getenv("PHOTON_MARKDOWN", "true").lower() in ("1", "true", "yes")
+
+
+def send(phone: str, text: str, *, markdown: bool = False) -> None:
+    """Raises on failure; messaging.send.send_text catches and logs."""
+    fmt = "markdown" if markdown and MARKDOWN else "plain"
+    _post_content(phone, {"type": "text", "format": fmt, "text": text if fmt == "markdown" else strip_md(text)})
+
+
+def typing(phone: str, on: bool = True) -> None:
+    """Show (or clear) the '...' typing bubbles in this person's chat. Best effort, never raises."""
+    if not configured():
+        return
+    try:
+        _post_content(phone, {"type": "space.typing.update", "typing": on}, timeout=3)
+    except Exception:
+        pass
+
+
+def strip_md(text: str) -> str:
+    """Plain-text version of our light Markdown (**bold**, [label](url))."""
+    import re
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    return re.sub(r"\[([^\]]+)\]\((\S+?)\)", r"\1: \2", text)
 
 
 def upload_attachment(data: bytes, content_type: str, filename: str = "photo.jpg") -> str:
@@ -89,17 +114,7 @@ def upload_attachment(data: bytes, content_type: str, filename: str = "photo.jpg
 
 
 def send_attachment(phone: str, attachment_id: str) -> None:
-    c = get_contact(phone)
-    if not c:
-        raise RuntimeError(f"{phone} hasn't texted the line yet (no Photon space)")
-    r = httpx.post(
-        f"{API}/projects/{_cfg()[1]}/messages",
-        headers={**_headers(), "idempotency-key": str(uuid4())},
-        json={"spaceId": c["space_id"], "senderId": c["line_user_id"],
-              "content": {"type": "attachment", "attachmentId": attachment_id}},
-        timeout=10,
-    )
-    r.raise_for_status()
+    _post_content(phone, {"type": "attachment", "attachmentId": attachment_id}, timeout=10)
 
 
 def _photo_bytes(photo_url: str) -> tuple[bytes, str]:
